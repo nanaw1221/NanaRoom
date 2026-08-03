@@ -1,0 +1,134 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* =======================================================
+   Milki Delivery 全局风格：温暖、卡通、手绘游戏感
+   ======================================================= */
+
+:root {
+  --milki-stroke: #4a3e35;
+  --milki-red: #e86045;
+  --milki-red-dark: #d94f38;
+  --milki-cream: #fff8e8;
+  --milki-yellow: #ffe08a;
+  --milki-blue: #88c8e8;
+  --milki-green: #a3df8c;
+  --milki-pink: #ff9eb8;
+  --milki-orange: #ffa36a;
+  --milki-brown: #c58a5a;
+  --milki-wood: #8b6a48;
+  --milki-wood-dark: #6e533a;
+}
+
+body {
+  background: linear-gradient(180deg, #fff6e8 0%, #ffe8d0 50%, #ffdcb8 100%);
+  color: var(--milki-stroke);
+  /* 英文优先圆润卡通字体，中文用快乐体，fallback 为系统圆润 */
+  font-family: 'Nunito', 'ZCOOL KuaiLe', 'Fredoka',
+               'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  font-weight: 600;
+  margin: 0;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: 0.2px;
+}
+
+* { box-sizing: border-box; }
+
+/* Milki 标题字体（厚重、圆润、卡通） */
+.font-milki-title {
+  font-family: 'ZCOOL KuaiLe', 'Fredoka', 'Nunito', sans-serif;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+}
+.font-milki-en {
+  font-family: 'Fredoka', 'Nunito', 'ZCOOL KuaiLe', sans-serif;
+  font-weight: 800;
+}
+
+/* 自定义滚动条 - Milki 温暖色调 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(255,248,232,0.3);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(217,79,56,0.35);
+  border-radius: 4px;
+  border: 1.5px solid var(--milki-stroke);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(217,79,56,0.55);
+}
+
+/* Milki 风格选择高亮 */
+::selection {
+  background: rgba(255,158,184,0.5);
+  color: var(--milki-stroke);
+}
+
+/* 旋转动画（黑胶唱片用） */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Milki 按钮按压反馈（参考 PLAY THE DEMO 木牌） */
+@keyframes woodPress {
+  0%   { transform: translateY(0); box-shadow: 0 5px 0 var(--milki-wood-dark); }
+  50%  { transform: translateY(3px); box-shadow: 0 2px 0 var(--milki-wood-dark); }
+  100% { transform: translateY(0); box-shadow: 0 5px 0 var(--milki-wood-dark); }
+}
+.btn-wood {
+  background: linear-gradient(180deg, #a57a56 0%, #8b6a48 50%, #755538 100%);
+  color: var(--milki-cream);
+  border: 3px solid var(--milki-stroke);
+  border-radius: 14px;
+  box-shadow: 0 5px 0 var(--milki-wood-dark), 0 6px 14px rgba(74,62,53,0.22);
+  padding: 10px 22px;
+  font-family: 'ZCOOL KuaiLe','Fredoka',sans-serif;
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 1.5px;
+  transition: all 0.08s ease-out;
+  cursor: pointer;
+  position: relative;
+  text-shadow: 0 2px 0 rgba(0,0,0,0.25);
+}
+.btn-wood:hover { filter: brightness(1.05); }
+.btn-wood:active {
+  transform: translateY(3px);
+  box-shadow: 0 2px 0 var(--milki-wood-dark), 0 3px 6px rgba(74,62,53,0.18);
+}
+
+/* Milki 次级按钮（奶油色，用于取消等） */
+.btn-cream {
+  background: linear-gradient(180deg, #fffdf4 0%, #fff3dc 60%, #ffe6bf 100%);
+  color: var(--milki-stroke);
+  border: 3px solid var(--milki-stroke);
+  border-radius: 14px;
+  box-shadow: 0 4px 0 #b8a588, 0 5px 12px rgba(74,62,53,0.15);
+  padding: 8px 20px;
+  font-family: 'ZCOOL KuaiLe','Fredoka',sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.08s ease-out;
+}
+.btn-cream:hover { filter: brightness(1.03); }
+.btn-cream:active {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 #b8a588, 0 3px 6px rgba(74,62,53,0.12);
+}
+
+/* Milki 虚线框（图片上传、添加按钮通用） */
+.milki-dashed {
+  border: 3px dashed var(--milki-stroke);
+  border-radius: 14px;
+  background: rgba(255,248,232,0.7);
+}

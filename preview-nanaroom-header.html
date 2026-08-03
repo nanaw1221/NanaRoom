@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>Nanaroom Header 预览</title>
+  <!-- 引入手写风格字体 -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;600;700&family=Pacifico&family=Dancing+Script:wght@600;700&family=ZCOOL+KuaiLe&display=swap"
+    rel="stylesheet"
+  />
+  <style>
+    body {
+      margin: 0;
+      padding: 60px 20px;
+      background: #f2ede3; /* 和图一类似的米黄底色 */
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 80px;
+      min-height: 100vh;
+      box-sizing: border-box;
+    }
+
+    /* 每个方案的容器 */
+    .variant {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      padding: 40px 60px;
+      background: #f7f2e6;
+      border-radius: 16px;
+      box-shadow: 0 4px 12px rgba(74,62,53,0.08);
+    }
+    .variant-label {
+      font-family: 'ZCOOL KuaiLe', sans-serif;
+      font-size: 13px;
+      color: #8b7560;
+      letter-spacing: 2px;
+      margin-bottom: 4px;
+    }http://www.w3.org/2000/svg">
+      <defs>
+
+    /* SVG 标题通用样式文字（在 SVG 内部也定义了，这里是 HTML fallback） */
+    h1 { margin: 0; }
+  </style>
+</head>
+<body>
+
+  <!-- ===== 方案一：Caveat 手写体（接近图一那种随性手写感） ===== -->
+  <div class="variant">
+    <div class="variant-label">方案一 · Caveat 手写体 · 麻花辫在右</div>
+    <svg viewBox="0 0 400 340" width="360" height="306" xmlns="
+        <style>
+          .stroke { stroke: #2d2a24; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+          .fill-dark { fill: #2d2a24; }
+          .fill-skin { fill: #f6e6d3; stroke: #2d2a24; stroke-width: 2.2; stroke-linejoin: round; }
+          .fill-pillow { fill: #e8d4e4; stroke: #2d2a24; stroke-width: 2.4; stroke-linejoin: round; }
+          .title-font {
+            font-family: 'Caveat', 'Pacifico', 'Dancing Script', cursive;
+            font-weight: 700;
+            fill: #2d2a24;
+          }
+          .sub-font {
+            font-family: 'ZCOOL KuaiLe', 'Caveat', sans-serif;
+            fill: #5a4f42;
+          }
+        </style>
+      </defs>
+
+      <!-- ============= 上部：手绘小女孩 ============= -->
+      <g transform="translate(200, 120)">
+        <!-- 头（稍圆） -->
+        <ellipse class="fill-skin" cx="0" cy="0" rx="42" ry="44" />
+
+        <!-- 刘海 -->
+        <path class="stroke" d="M-32 -22 Q-28 -38 -10 -40 Q4 -42 14 -34 Q22 -28 30 -20 L30 -28 Q20 -48 -2 -48 Q-24 -48 -34 -28 Z"
+              fill="#2d2a24" stroke-width="2.2"/>
+
+        <!-- 头发主体（右侧长发） -->
+        <path class="fill-dark" d="M-40 -10 Q-46 10 -38 28 Q-32 40 -18 38 L-32 -22 Z" />
+
+        <!-- ===== 右侧：单侧麻花辫 ===== -->
+        <!-- 麻花辫分三段 -->
+        <g transform="translate(36, -4)">
+          <!-- 第一段（连接头部） -->
+          <ellipse class="fill-dark" cx="0" cy="6" rx="11" ry="14" />
+          <path class="stroke" d="M-9 2 Q0 -2 8 2 M-10 8 Q0 4 10 8 M-10 14 Q0 10 10 14" stroke-width="1.8"/>
+          <!-- 连接 -->
+          <path class="fill-dark" d="M-8 18 Q0 22 8 18 L6 28 Q0 32 -6 28 Z" />
+          <!-- 第二段 -->
+          <ellipse class="fill-dark" cx="0" cy="38" rx="10" ry="13" />
+          <path class="stroke" d="M-8 34 Q0 30 8 34 M-9 40 Q0 36 9 40 M-9 46 Q0 42 9 46" stroke-width="1.7"/>
+          <!-- 连接 -->
+          <path class="fill-dark" d="M-7 50 Q0 54 7 50 L5 58 Q0 62 -5 58 Z" />
+          <!-- 第三段（末段，绑绳） -->
+          <ellipse class="fill-dark" cx="0" cy="70" rx="9" ry="12" />
+          <path class="stroke" d="M-7 66 Q0 62 7 66 M-8 72 Q0 68 8 72 M-8 78 Q0 74 8 78" stroke-width="1.6"/>
+          <!-- 麻花辫绑绳 -->
+          <rect x="-10" y="80" width="20" height="6" rx="2" fill="#d9a4b8" stroke="#2d2a24" stroke-width="2"/>
+          <!-- 发尾 -->
+          <path class="fill-dark" d="M-6 86 L0 96 L6 86 Z" />
+        </g>
+
+        <!-- 小耳朵 -->
+        <ellipse class="fill-skin" cx="-38" cy="2" rx="5" ry="7" />
+
+        <!-- 眼睛 -->
+        <circle class="fill-dark" cx="-12" cy="2" r="3.5" />
+        <circle class="fill-dark" cx="14" cy="2" r="3.5" />
+        <!-- 眼睛高光 -->
+        <circle cx="-11" cy="1" r="1" fill="#fff" />
+        <circle cx="15" cy="1" r="1" fill="#fff" />
+
+        <!-- 脸颊红晕 -->
+        <ellipse cx="-20" cy="12" rx="6" ry="4" fill="#f2b8b0" opacity="0.85"/>
+        <ellipse cx="22" cy="12" rx="6" ry="4" fill="#f2b8b0" opacity="0.85"/>
+
+        <!-- 微笑 -->
+        <path class="stroke" d="M-8 16 Q0 24 8 16" stroke-width="2.2" />
+
+        <!-- 小花纹领口 -->
+        <path class="stroke" d="M-28 40 Q-18 48 0 48 Q18 48 28 40" stroke-width="2.4"/>
+        <!-- 小花边：一圈小圆弧 -->
+        <path class="stroke" d="M-26 40 q-2 3 -4 1 M-18 43 q-2 3 -4 1 M-10 45 q-2 3 -4 1 M-2 46 q-2 3 -4 1 M6 45 q-2 3 -4 1 M14 43 q-2 3 -4 1 M22 40 q-2 3 -4 1"
+              stroke-width="1.8"/>
+
+        <!-- ============= 身体 + 抱枕头 ============= -->
+        <!-- 左手臂（从左边环抱住枕头） -->
+        <path class="stroke" d="M-28 48 Q-46 58 -50 78 Q-54 96 -38 96" stroke-width="2.6"/>
+        <!-- 右手臂（从右边环抱住） -->
+        <path class="stroke" d="M28 48 Q50 58 52 78 Q54 92 44 96 Q36 98 32 92" stroke-width="2.6"/>
+
+        <!-- ===== 松软大枕头 ===== -->
+        <g transform="translate(0, 84)">
+          <!-- 枕头上侧松软弧形 -->
+          <path class="fill-pillow"
+                d="M-62 -6 Q-60 -20 -44 -18 Q-36 -26 -22 -20 Q-12 -28 0 -22 Q12 -28 22 -20 Q36 -26 44 -18 Q60 -20 62 -6 L58 22 Q54 30 42 30 L-42 30 Q-54 30 -58 22 Z"/>
+          <!-- 松软横向褶皱线 -->
+          <path class="stroke" d="M-54 2 Q-38 -2 -22 2 Q-6 6 10 2 Q26 -2 42 2 Q54 4 58 2" stroke-width="1.6" opacity="0.55"/>
+          <path class="stroke" d="M-52 14 Q-34 10 -16 14 Q2 18 20 14 Q38 10 54 14" stroke-width="1.6" opacity="0.55"/>
+          <!-- 小点点装饰 -->
+          <circle cx="-32" cy="-4" r="1.6" fill="#d9a4b8" opacity="0.8"/>
+          <circle cx="8" cy="-10" r="1.4" fill="#d9a4b8" opacity="0.8"/>
+          <circle cx="38" cy="-6" r="1.5" fill="#d9a4b8" opacity="0.8"/>
+          <circle cx="-12" cy="16" r="1.3" fill="#d9a4b8" opacity="0.7"/>
+          <circle cx="26" cy="18" r="1.4" fill="#d9a4b8" opacity="0.7"/>
+        </g>
+
+        <!-- 手指（搭在枕头上方，左右各露一点点） -->
+        <path class="fill-skin" d="M-40 88 Q-36 82 -28 84 L-30 96 Q-38 100 -42 94 Z"/>
+        <path class="fill-skin" d="M40 88 Q36 82 28 84 L30 96 Q38 100 42 94 Z"/>
+      </g>
+
+      <!-- ============= 标题 nanaroom ============= -->
+      <text x="200" y="235" text-anchor="middle" class="title-font" font-size="74">
+        nanaroom
+      </text>
+
+      <!-- 标题左右小装饰：小星星 -->
+      <g transform="translate(78, 218)">
+        <path d="M0 0 l2 4 l4.5 0.6 l-3.3 3 l0.8 4.5 l-4 -2 l-4 2 l0.8 -4.5 l-3.3 -3 l4.5 -0.6 z"
+              fill="none" stroke="#2d2a24" stroke-width="2" stroke-linejoin="round"/>
+      </g>
+      <g transform="translate(322, 218)">
+        <path d="M0 0 l2 4 l4.5 0.6 l-3.3 3 l0.8 4.5 l-4 -2 l-4 2 l0.8 -4.5 l-3.3 -3 l4.5 -0.6 z"
+              fill="none" stroke="#2d2a24" stroke-width="2" stroke-linejoin="round"/>
+      </g>
+
+      <!-- ============= 副标题：那个房间 ============= -->
+      <text x="200" y="285" text-anchor="middle" class="sub-font" font-size="22" letter-spacing="8">
+        那 个 房 间
+      </text>
+
+      <!-- 副标题下方小虚线装饰 -->
+      <path d="M140 302 q10 -4 20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0"
+            class="stroke" stroke-width="1.6" stroke-dasharray="0 0" opacity="0.4"/>
+    </svg>
+  </div>
+
+
+  <!-- ===== 方案二：Pacifico 字体（更圆润，品牌感更强）+ 麻花辫在左 ===== -->
+  <div class="variant">
+    <div class="variant-label">方案二 · Pacifico 圆润字体 · 麻花辫在左</div>
+    <svg viewBox="0 0 400 340" width="360" height="306" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <style>
+          .stroke { stroke: #2d2a24; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+          .fill-dark { fill: #2d2a24; }
+          .fill-skin { fill: #f6e6d3; stroke: #2d2a24; stroke-width: 2.2; stroke-linejoin: round; }
+          .fill-pillow { fill: #dfe8d8; stroke: #2d2a24; stroke-width: 2.4; stroke-linejoin: round; }
+          .title-font {
+            font-family: 'Pacifico', 'Dancing Script', 'Caveat', cursive;
+            font-weight: 400;
+            fill: #2d2a24;
+          }
+          .sub-font {
+            font-family: 'ZCOOL KuaiLe', sans-serif;
+            fill: #5a4f42;
+          }
+        </style>
+      </defs>
+
+      <g transform="translate(200, 120)">
+        <!-- 头 -->
+        <ellipse class="fill-skin" cx="0" cy="0" rx="42" ry="44" />
+
+        <!-- 刘海 -->
+        <path class="stroke" d="M-32 -22 Q-28 -38 -10 -40 Q4 -42 14 -34 Q22 -28 30 -20 L30 -28 Q20 -48 -2 -48 Q-24 -48 -34 -28 Z"
+              fill="#2d2a24" stroke-width="2.2"/>
+
+        <!-- 头发主体（左侧长发） -->
+        <path class="fill-dark" d="M40 -10 Q46 10 38 28 Q32 40 18 38 L32 -22 Z" />
+
+        <!-- ===== 左侧：单侧麻花辫 ===== -->
+        <g transform="translate(-36, -4)">
+          <ellipse class="fill-dark" cx="0" cy="6" rx="11" ry="14" />
+          <path class="stroke" d="M-9 2 Q0 -2 8 2 M-10 8 Q0 4 10 8 M-10 14 Q0 10 10 14" stroke-width="1.8"/>
+          <path class="fill-dark" d="M-8 18 Q0 22 8 18 L6 28 Q0 32 -6 28 Z" />
+          <ellipse class="fill-dark" cx="0" cy="38" rx="10" ry="13" />
+          <path class="stroke" d="M-8 34 Q0 30 8 34 M-9 40 Q0 36 9 40 M-9 46 Q0 42 9 46" stroke-width="1.7"/>
+          <path class="fill-dark" d="M-7 50 Q0 54 7 50 L5 58 Q0 62 -5 58 Z" />
+          <ellipse class="fill-dark" cx="0" cy="70" rx="9" ry="12" />
+          <path class="stroke" d="M-7 66 Q0 62 7 66 M-8 72 Q0 68 8 72 M-8 78 Q0 74 8 78" stroke-width="1.6"/>
+          <!-- 绑绳（薄荷绿） -->
+          <rect x="-10" y="80" width="20" height="6" rx="2" fill="#a8cdb4" stroke="#2d2a24" stroke-width="2"/>
+          <path class="fill-dark" d="M-6 86 L0 96 L6 86 Z" />
+        </g>
+
+        <ellipse class="fill-skin" cx="38" cy="2" rx="5" ry="7" />
+
+        <!-- 眼睛：弯弯笑眼 -->
+        <path class="stroke" d="M-16 2 Q-12 -2 -8 2" stroke-width="2.4"/>
+        <path class="stroke" d="M10 2 Q14 -2 18 2" stroke-width="2.4"/>
+
+        <ellipse cx="-20" cy="12" rx="6" ry="4" fill="#f2b8b0" opacity="0.85"/>
+        <ellipse cx="22" cy="12" rx="6" ry="4" fill="#f2b8b0" opacity="0.85"/>
+
+        <!-- 嘴巴张开笑（更活泼） -->
+        <path class="fill-skin" d="M-7 15 Q0 26 7 15 Q0 22 -7 15 Z" fill="#e89a8a" stroke="#2d2a24" stroke-width="2"/>
+
+        <!-- 花边领子 -->
+        <path class="stroke" d="M-28 40 Q-18 48 0 48 Q18 48 28 40" stroke-width="2.4"/>
+        <path class="stroke" d="M-26 40 q-2 3 -4 1 M-18 43 q-2 3 -4 1 M-10 45 q-2 3 -4 1 M-2 46 q-2 3 -4 1 M6 45 q-2 3 -4 1 M14 43 q-2 3 -4 1 M22 40 q-2 3 -4 1"
+              stroke-width="1.8"/>
+
+        <!-- 手臂 -->
+        <path class="stroke" d="M-28 48 Q-46 58 -50 78 Q-54 96 -38 96" stroke-width="2.6"/>
+        <path class="stroke" d="M28 48 Q50 58 52 78 Q54 92 44 96 Q36 98 32 92" stroke-width="2.6"/>
+
+        <!-- ===== 薄荷绿松软枕头 ===== -->
+        <g transform="translate(0, 84)">
+          <path class="fill-pillow"
+                d="M-62 -6 Q-60 -20 -44 -18 Q-36 -26 -22 -20 Q-12 -28 0 -22 Q12 -28 22 -20 Q36 -26 44 -18 Q60 -20 62 -6 L58 22 Q54 30 42 30 L-42 30 Q-54 30 -58 22 Z"/>
+          <path class="stroke" d="M-54 2 Q-38 -2 -22 2 Q-6 6 10 2 Q26 -2 42 2 Q54 4 58 2" stroke-width="1.6" opacity="0.55"/>
+          <path class="stroke" d="M-52 14 Q-34 10 -16 14 Q2 18 20 14 Q38 10 54 14" stroke-width="1.6" opacity="0.55"/>
+          <!-- 小叶子装饰 -->
+          <path d="M-34 -8 q-2 -6 4 -8 q2 6 -4 8 Z" fill="#a8cdb4" stroke="#2d2a24" stroke-width="1.5" opacity="0.9"/>
+          <path d="M30 -10 q-2 -6 4 -8 q2 6 -4 8 Z" fill="#a8cdb4" stroke="#2d2a24" stroke-width="1.5" opacity="0.9"/>
+          <circle cx="10" cy="16" r="1.5" fill="#a8cdb4" opacity="0.7"/>
+          <circle cx="-20" cy="18" r="1.4" fill="#a8cdb4" opacity="0.7"/>
+        </g>
+
+        <path class="fill-skin" d="M-40 88 Q-36 82 -28 84 L-30 96 Q-38 100 -42 94 Z"/>
+        <path class="fill-skin" d="M40 88 Q36 82 28 84 L30 96 Q38 100 42 94 Z"/>
+      </g>
+
+      <!-- 标题 -->
+      <text x="200" y="240" text-anchor="middle" class="title-font" font-size="62">
+        nanaroom
+      </text>
+      <!-- 标题左右：小花 -->
+      <g transform="translate(66, 228)">
+        <circle cx="0" cy="0" r="2.6" fill="#f2b8b0" stroke="#2d2a24" stroke-width="1.6"/>
+        <circle cx="-6" cy="-4" r="3" fill="none" stroke="#2d2a24" stroke-width="1.6"/>
+        <circle cx="6" cy="-4" r="3" fill="none" stroke="#2d2a24" stroke-width="1.6"/>
+        <circle cx="0" cy="-9" r="3" fill="none" stroke="#2d2a24" stroke-width="1.6"/>
+      </g>
+      <g transform="translate(334, 228)">
+        <circle cx="0" cy="0" r="2.6" fill="#f2b8b0" stroke="#2d2a24" stroke-width="1.6"/>
+        <circle cx="-6" cy="-4" r="3" fill="none" stroke="#2d2a24" stroke-width="1.6"/>
+        <circle cx="6" cy="-4" r="3" fill="none" stroke="#2d2a24" stroke-width="1.6"/>
+        <circle cx="0" cy="-9" r="3" fill="none" stroke="#2d2a24" stroke-width="1.6"/>
+      </g>
+
+      <!-- 副标题 -->
+      <text x="200" y="285" text-anchor="middle" class="sub-font" font-size="22" letter-spacing="8">
+        那 个 房 间
+      </text>
+    </svg>
+  </div>
+
+
+  <!-- ===== 方案三：Dancing Script 字体（更优雅）+ 麻花辫右 + 米色枕头 ===== -->
+  <div class="variant">
+    <div class="variant-label">方案三 · Dancing Script 优雅字体 · 麻花辫右 · 米色枕头</div>
+    <svg viewBox="0 0 400 340" width="360" height="306" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <style>
+          .stroke { stroke: #2d2a24; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+          .fill-dark { fill: #2d2a24; }
+          .fill-skin { fill: #f6e6d3; stroke: #2d2a24; stroke-width: 2.2; stroke-linejoin: round; }
+          .fill-pillow { fill: #efe0c6; stroke: #2d2a24; stroke-width: 2.4; stroke-linejoin: round; }
+          .title-font {
+            font-family: 'Dancing Script', 'Pacifico', 'Caveat', cursive;
+            font-weight: 700;
+            fill: #2d2a24;
+          }
+          .sub-font {
+            font-family: 'ZCOOL KuaiLe', sans-serif;
+            fill: #5a4f42;
+          }
+        </style>
+      </defs>
+
+      <g transform="translate(200, 120)">
+        <ellipse class="fill-skin" cx="0" cy="0" rx="42" ry="44" />
+
+        <!-- 刘海（稍不齐，更自然） -->
+        <path class="stroke" d="M-32 -20 Q-30 -36 -12 -40 Q8 -44 18 -32 Q26 -24 32 -18 L28 -30 Q18 -50 -4 -48 Q-22 -50 -34 -28 Z"
+              fill="#2d2a24" stroke-width="2.2"/>
+        <!-- 额前碎发 -->
+        <path class="stroke" d="M-18 -36 q2 6 6 4 M-4 -40 q2 6 6 4 M10 -36 q2 6 6 4" stroke-width="1.6"/>
+
+        <!-- 头发主体（左侧） -->
+        <path class="fill-dark" d="M-40 -10 Q-46 10 -38 28 Q-32 40 -18 38 L-32 -22 Z" />
+
+        <!-- ===== 右侧：单侧麻花辫（稍粗一点） ===== -->
+        <g transform="translate(38, -2)">
+          <ellipse class="fill-dark" cx="0" cy="6" rx="12" ry="15" />
+          <path class="stroke" d="M-10 2 Q0 -3 10 2 M-11 9 Q0 5 11 9 M-11 16 Q0 12 11 16" stroke-width="1.9"/>
+          <path class="fill-dark" d="M-9 20 Q0 24 9 20 L7 30 Q0 34 -7 30 Z" />
+          <ellipse class="fill-dark" cx="0" cy="42" rx="11" ry="14" />
+          <path class="stroke" d="M-9 38 Q0 33 9 38 M-10 45 Q0 41 10 45 M-10 52 Q0 48 10 52" stroke-width="1.8"/>
+          <path class="fill-dark" d="M-8 54 Q0 58 8 54 L6 62 Q0 66 -6 62 Z" />
+          <ellipse class="fill-dark" cx="0" cy="76" rx="10" ry="13" />
+          <path class="stroke" d="M-8 72 Q0 67 8 72 M-9 79 Q0 75 9 79 M-9 86 Q0 82 9 86" stroke-width="1.7"/>
+          <!-- 绑绳：橙黄色 -->
+          <rect x="-11" y="88" width="22" height="7" rx="2" fill="#f0c88a" stroke="#2d2a24" stroke-width="2"/>
+          <path class="fill-dark" d="M-6 95 L0 106 L6 95 Z" />
+        </g>
+
+        <ellipse class="fill-skin" cx="-38" cy="2" rx="5" ry="7" />
+
+        <!-- 眼睛：圆眼，一个闭着 wink -->
+        <circle class="fill-dark" cx="-12" cy="2" r="3.5" />
+        <path class="stroke" d="M10 2 Q14 -1 18 2" stroke-width="2.4"/>
+        <circle cx="-11" cy="1" r="1" fill="#fff" />
+
+        <!-- 腮红 -->
+        <ellipse cx="-20" cy="12" rx="6" ry="4" fill="#f2b8b0" opacity="0.85"/>
+        <ellipse cx="22" cy="12" rx="6" ry="4" fill="#f2b8b0" opacity="0.85"/>
+
+        <!-- 小嘴（嘟嘟笑） -->
+        <path class="stroke" d="M-6 16 Q-2 22 2 20 Q6 22 10 16" stroke-width="2.2"/>
+
+        <!-- 衣领 -->
+        <path class="stroke" d="M-28 40 Q-18 48 0 48 Q18 48 28 40" stroke-width="2.4"/>
+        <path class="stroke" d="M-26 40 q-2 3 -4 1 M-18 43 q-2 3 -4 1 M-10 45 q-2 3 -4 1 M-2 46 q-2 3 -4 1 M6 45 q-2 3 -4 1 M14 43 q-2 3 -4 1 M22 40 q-2 3 -4 1"
+              stroke-width="1.8"/>
+
+        <!-- 手臂 -->
+        <path class="stroke" d="M-28 48 Q-46 58 -50 78 Q-54 96 -38 96" stroke-width="2.6"/>
+        <path class="stroke" d="M28 48 Q50 58 52 78 Q54 92 44 96 Q36 98 32 92" stroke-width="2.6"/>
+
+        <!-- ===== 米色大枕头（带小条纹） ===== -->
+        <g transform="translate(0, 84)">
+          <path class="fill-pillow"
+                d="M-62 -6 Q-60 -20 -44 -18 Q-36 -26 -22 -20 Q-12 -28 0 -22 Q12 -28 22 -20 Q36 -26 44 -18 Q60 -20 62 -6 L58 22 Q54 30 42 30 L-42 30 Q-54 30 -58 22 Z"/>
+          <path class="stroke" d="M-54 2 Q-38 -2 -22 2 Q-6 6 10 2 Q26 -2 42 2 Q54 4 58 2" stroke-width="1.6" opacity="0.55"/>
+          <path class="stroke" d="M-52 14 Q-34 10 -16 14 Q2 18 20 14 Q38 10 54 14" stroke-width="1.6" opacity="0.55"/>
+          <!-- 米色条纹：斜的三条 -->
+          <path class="stroke" d="M-40 -10 L-32 20 M-10 -14 L-4 24 M22 -12 M30 18" stroke="#c9a86e" stroke-width="1.8" opacity="0.55"/>
+          <path class="stroke" d="M22 -12 L30 20" stroke="#c9a86e" stroke-width="1.8" opacity="0.55"/>
+        </g>
+
+        <path class="fill-skin" d="M-40 88 Q-36 82 -28 84 L-30 96 Q-38 100 -42 94 Z"/>
+        <path class="fill-skin" d="M40 88 Q36 82 28 84 L30 96 Q38 100 42 94 Z"/>
+      </g>
+
+      <!-- 标题：Dancing Script，首字母略大 -->
+      <text x="200" y="240" text-anchor="middle" class="title-font" font-size="68">
+        nanaroom
+      </text>
+      <!-- 标题左右：小月亮 -->
+      <g transform="translate(70, 222)">
+        <path d="M2 0 a6 6 0 1 0 3 11 a4 4 0 0 1 -3 -11 Z"
+              fill="none" stroke="#2d2a24" stroke-width="2" stroke-linejoin="round"/>
+      </g>
+      <g transform="translate(330, 222)">
+        <path d="M2 0 a6 6 0 1 0 3 11 a4 4 0 0 1 -3 -11 Z"
+              fill="none" stroke="#2d2a24" stroke-width="2" stroke-linejoin="round"/>
+      </g>
+
+      <!-- 副标题 -->
+      <text x="200" y="285" text-anchor="middle" class="sub-font" font-size="22" letter-spacing="8">
+        那 个 房 间
+      </text>
+    </svg>
+  </div>
+
+</body>
+</html>
