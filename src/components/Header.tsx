@@ -48,6 +48,16 @@ export function readHeaderCalib(): HeaderCalibParams {
 }
 
 const Header = () => {
+  // ========== 0. 移动端检测（和 App.tsx 保持一致：<640px 为移动端） ==========
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 640 : false,
+  );
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 640);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
+
   // 2. 识别校准模式：URL ?headerCalib=1
   const [showCalib] = useState(() => {
     try {
@@ -140,6 +150,17 @@ const DEFAULTS = {
   const justifyMap = ['flex-start', 'center', 'flex-end'] as const;
   const alignMap = ['flex-start', 'center', 'flex-end'] as const;
 
+  // ========== 移动端 / 桌面端 独立布局参数 ==========
+  // 移动端：顶部居中标题，不要用桌面端左侧栏的 offsetYPx=-80 等参数，否则标题会跑出屏幕
+  const layout = {
+    justify: isMobile ? 'center' : justifyMap[params.sidebarAlignX],
+    align: isMobile ? 'flex-start' : alignMap[params.sidebarAlignY],
+    offsetYPx: isMobile ? 12 : params.offsetYPx,     // 移动端：顶部往下 12px 露出，桌面端：原校准值
+    offsetXPx: isMobile ? 0  : params.offsetXPx,      // 移动端：水平归零，桌面端：原校准值
+    titleSizeMaxPx: isMobile ? 150 : params.sizePx,   // 移动端：标题最大 150px，桌面端：原校准大小
+    titleSizeMinPx: isMobile ? 90  : params.sizeMinPx,// 移动端：最小 90px，桌面端：原校准最小值
+  };
+
   return (
     <>
       {/* ================== 标题本身 ================== */}
@@ -149,28 +170,32 @@ const DEFAULTS = {
           - 内部按 sidebarAlignX/Y 决定标题在左栏中的位置
           - offsetXPx/offsetYPx 作为"对齐后的额外微调位移"
           - 横条色块始终没有！因为透明 header 透出页面 body 的米黄渐变
+        v11 移动端适配：
+          - 窄屏(<640px)时：强制居中对齐、顶部露出，标题缩小，避免标题被顶栏挡住
       */}
       <header
         className="w-full h-full flex select-none"
         onClick={onTitleClick}
         title=""
         style={{
-          justifyContent: justifyMap[params.sidebarAlignX],
-          alignItems: alignMap[params.sidebarAlignY],
+          justifyContent: layout.justify,
+          alignItems: layout.align,
           cursor: 'default',
+          paddingTop: isMobile ? 'env(safe-area-inset-top, 0px)' : undefined,
         }}
       >
         <div
           style={{
-            marginTop: `${params.offsetYPx}px`,
-            marginLeft: `${params.offsetXPx}px`,
+            marginTop: `${layout.offsetYPx}px`,
+            marginLeft: `${layout.offsetXPx}px`,
+            marginBottom: isMobile ? '6px' : `${-params.overlapBottomPx}px`,
           }}
         >
           <div
             className="relative inline-flex items-center justify-center"
             style={{
-              width: `clamp(${params.sizeMinPx}px, 16vw, ${params.sizePx}px)`,
-              maxWidth: `${params.sizePx}px`,
+              width: `clamp(${layout.titleSizeMinPx}px, 24vw, ${layout.titleSizeMaxPx}px)`,
+              maxWidth: `${layout.titleSizeMaxPx}px`,
             }}
           >
             {/* 图片：正片叠底融合 + 提亮 */}
