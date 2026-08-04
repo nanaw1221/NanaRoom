@@ -9,7 +9,7 @@
 //  ② 本地模式（未配置 Supabase，或未登录）
 //        - 读/写都走 localStorage（和之前单机行为 100% 一致）
 // ============================================================
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { AnyRecord, RecordCategory } from '../types/records';
 import {
   supabase,
@@ -155,12 +155,19 @@ export function useRecords<T extends AnyRecord>(category: RecordCategory) {
     return () => { alive = false; };
   }, [isConfigured, category, supabase]);
 
-  /* ---------- 本地模式：records 变 → 写回 localStorage ---------- */
+  /* ---------- 双保险持久化：只要不是「管理员 + 云端 100% 已写入」就写回 localStorage ---------- */
+  // 规则：
+  //  1) 本地模式（!isConfigured）→ 写 localStorage（旧行为不变）
+  //  2) 云端模式 + 未登录管理员（访客没权限写远端）→ 写 localStorage（防止访客点了新增后刷新没）
+  //  3) 云端模式 + 是管理员但写入失败（网络/RLS报错）→ 仍然落 localStorage（兜底：下次登录自动迁上去）
   useEffect(() => {
-    if (!isConfigured && syncedCategory === category) {
+    if (syncedCategory === category && !isAdmin) {
       saveLocal(category, records);
     }
-  }, [isConfigured, category, syncedCategory, records]);
+  }, [isAdmin, category, syncedCategory, records]);
+
+  // 云端模式下管理员写入成功后的「已同步」标记（用 weakMap，只在内存里）——真实已写入过的就不再重复存 localStorage
+  const persistedInCloudRef = useRef<Set<string>>(new Set());
 
   /* ---------- 增：addRecord ---------- */
   const addRecord = useCallback(
@@ -175,7 +182,12 @@ export function useRecords<T extends AnyRecord>(category: RecordCategory) {
         createdAt: now,
         updatedAt: now,
       } as T;
-      setRecords((prev) => [optimistic, ...prev]);
+      setRecords((prev) => {
+        const next = [optimistic, ...prev];
+        // 本地模式 / 不是管理员：立刻落 localStorage（不相信 useEffect，马上就保存）
+        if (!isConfigured || !isAdmin) saveLocal(category, next);
+        return next;
+      });
 
       // 2) 云端模式 + 管理员 → 远程写入
       if (isConfigured && isAdmin && supabase) {
@@ -183,7 +195,6 @@ export function useRecords<T extends AnyRecord>(category: RecordCategory) {
         const img = anyO.image ?? anyO.imageUrl;
         const finalDesc = anyO.description ?? anyO.review ?? anyO.content;
         const finalDate = anyO.date ?? anyO.readDate ?? anyO.watchDate;
-        // 把非通用字段丢到 extra JSONB（author / artist / location / content 等）
         const commonKeys = new Set(['id', 'category', 'createdAt', 'updatedAt', 'image', 'imageUrl', 'title', 'description', 'review', 'content', 'date', 'readDate', 'watchDate', 'tags', 'rating']);
         const extra: Record<string, any> = {};
         for (const k of Object.keys(anyO)) {
@@ -209,11 +220,15 @@ export function useRecords<T extends AnyRecord>(category: RecordCategory) {
           .select('*')
           .single();
         if (!error && inserted) {
-          // 成功：把本地临时 id 换成远程真实 id
+          const realId = String(inserted.id);
+          // 成功：本地临时 id 换成远程真实 id，并标记"已在云端持久化"
+          persistedInCloudRef.current.add(realId);
           setRecords((prev) =>
-            prev.map((r) => (r.id === optimistic.id ? { ...r, id: String(inserted.id) } : r)),
+            prev.map((r) => (r.id === optimistic.id ? { ...r, id: realId } : r)),
           );
-          return optimistic;
+        } else {
+          // 云端写入失败（网络/RLS）→ 兜底落 localStorage，下次登录自动迁移
+          setRecords((prev) => { saveLocal(category, prev); return prev; });
         }
       }
       return optimistic;
@@ -226,9 +241,11 @@ export function useRecords<T extends AnyRecord>(category: RecordCategory) {
     async (id: string, patch: Partial<T>) => {
       const now = new Date().toISOString();
       // 乐观更新
-      setRecords((prev) =>
-        prev.map((r) => (r.id === id ? { ...r, ...(patch as any), updatedAt: now } as T : r)),
-      );
+      setRecords((prev) => {
+        const next = prev.map((r) => (r.id === id ? { ...r, ...(patch as any), updatedAt: now } as T : r));
+        if (!isConfigured || !isAdmin) saveLocal(category, next);
+        return next;
+      });
       if (isConfigured && isAdmin && supabase) {
         const anyP = patch as any;
         const img = anyP.image ?? anyP.imageUrl;
@@ -250,7 +267,6 @@ export function useRecords<T extends AnyRecord>(category: RecordCategory) {
         if ('rating' in anyP) payload.rating = typeof anyP.rating === 'number' ? anyP.rating : null;
         if (finalDate !== undefined) payload.date = finalDate ?? null;
         if ('tags' in anyP) payload.tags = Array.isArray(anyP.tags) ? anyP.tags : [];
-        // 简单策略：先 select 原 extra → Object.assign → update（个人站并发为0，足够）
         if (Object.keys(extraPatch).length) {
           try {
             const { data: old } = await supabase
@@ -259,23 +275,42 @@ export function useRecords<T extends AnyRecord>(category: RecordCategory) {
               .eq('id', Number.isFinite(Number(id)) ? Number(id) : id)
               .maybeSingle();
             payload.extra = { ...((old as any)?.extra ?? {}), ...extraPatch };
-          } catch { /* ignore, just update other fields */ }
+          } catch { /* ignore */ }
         }
-        await supabase.from('records').update(payload).eq('id', Number.isFinite(Number(id)) ? Number(id) : id);
+        const { error } = await supabase
+          .from('records')
+          .update(payload)
+          .eq('id', Number.isFinite(Number(id)) ? Number(id) : id);
+        if (error) {
+          setRecords((prev) => { saveLocal(category, prev); return prev; });
+        } else {
+          persistedInCloudRef.current.add(id);
+        }
       }
     },
-    [isConfigured, isAdmin, supabase],
+    [category, isConfigured, isAdmin, supabase],
   );
 
   /* ---------- 删：deleteRecord ---------- */
   const deleteRecord = useCallback(
     async (id: string) => {
-      setRecords((prev) => prev.filter((r) => r.id !== id));
+      setRecords((prev) => {
+        const next = prev.filter((r) => r.id !== id);
+        if (!isConfigured || !isAdmin) saveLocal(category, next);
+        return next;
+      });
       if (isConfigured && isAdmin && supabase) {
-        await supabase.from('records').delete().eq('id', Number.isFinite(Number(id)) ? Number(id) : id);
+        const { error } = await supabase
+          .from('records')
+          .delete()
+          .eq('id', Number.isFinite(Number(id)) ? Number(id) : id);
+        if (error) {
+          // 远端删失败，本地记录依然保留在 localStorage 兜底
+          setRecords((prev) => { saveLocal(category, prev); return prev; });
+        }
       }
     },
-    [isConfigured, isAdmin, supabase],
+    [category, isConfigured, isAdmin, supabase],
   );
 
   /* ---------- 查：getRecord ---------- */
