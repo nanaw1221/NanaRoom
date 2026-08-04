@@ -23,12 +23,16 @@ interface HotspotDef {
    * 2026-08-01 交互式校准工具导出精确坐标：
    */
   const hotspotDefs: HotspotDef[] = [
-    { id: 'projector', label: '投影仪', category: 'movies',    x: 685,  y: 20,  width: 165, height: 140 },
-    { id: 'bookshelf', label: '书架',   category: 'books',     x: 1089, y: 621, width: 352, height: 170 },
-    { id: 'albums',    label: '专辑柜', category: 'albums',    x: 1086, y: 399, width: 361, height: 197 },
-    { id: 'notebook',  label: '笔记本', category: 'notes',     x: 394,  y: 511, width: 116, height: 72  },
-    { id: 'travel',    label: '明信片', category: 'travel',    x: 1259, y: 212, width: 71,  height: 42  },
-    { id: 'concerts',  label: '机票',   category: 'concerts',  x: 1124, y: 245, width: 122, height: 61  },
+    // ★ movies（33 条电影）绑定投影仪：显著扩大热点区域（原来 165×140 → 现在 280×200），
+    //   向左+向下延伸，覆盖投影仪+投影幕布上方大片天花板，一点就中
+    { id: 'projector', label: '🎬 投影仪 · 电影(33)', category: 'movies',    x: 620,  y: 10,  width: 280, height: 200 },
+    { id: 'bookshelf', label: '📚 书架 · 读书',       category: 'books',     x: 1060, y: 600, width: 400, height: 210 },
+    // ★ albums（9 条专辑）扩大热点（原 361×197 → 410×240），向左+向下延伸，降低点中门槛
+    { id: 'albums',    label: '💿 专辑柜 · 专辑(9)',  category: 'albums',    x: 1060, y: 380, width: 410, height: 240 },
+    { id: 'notebook',  label: '📓 笔记本 · 写下的',   category: 'notes',     x: 370,  y: 490, width: 170, height: 120 },
+    // ★ 展板上的旅行/演唱会也显著扩大（原 71×42 / 122×61 → 大一圈），点展板附近就触发
+    { id: 'travel',    label: '✈️ 明信片 · 旅行',     category: 'travel',    x: 1230, y: 190, width: 130, height: 90  },
+    { id: 'concerts',  label: '🎫 机票 · 演唱会',     category: 'concerts',  x: 1100, y: 225, width: 180, height: 100 },
   ];
 
 interface RoomSceneProps {
