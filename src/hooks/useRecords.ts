@@ -1,13 +1,15 @@
 // ============================================================
-// useRecords  ·  记录 CRUD
+// useRecords · 记录 CRUD（v2 · 2026-08-05 重写）
 // ============================================================
-// 双模式：
-//  ① 云端模式（已配置 Supabase + 管理员登录）
-//        - 读：所有人可读取 records 表（公共匿名 select）
-//        - 写：只有管理员（RLS 限定指定邮箱）可增/改/删
-//        - 图片：上传到 Storage 桶 record-images（公开读）
-//  ② 本地模式（未配置 Supabase，或未登录）
-//        - 读/写都走 localStorage（和之前单机行为 100% 一致）
+// 设计原则：
+//   1. localStorage 是真相源 —— 立即读写，绝不等待云端
+//   2. Supabase 是同步层 —— 后台拉取/推送，失败不影响本地展示
+//   3. 图片只存 Storage URL，绝不把 base64 写入数据库
+//   4. 列表查询排除 image_url（大字段），按需懒加载
+//   5. 本地模式（未配置 Supabase）→ 读写都走 localStorage
+//      云端模式（配置了 Supabase）→ 本地缓存 + 云端同步
+//        · 任何人都能读（RLS 公开读）
+//        · 管理员能写（RLS 限定邮箱）
 // ============================================================
 import { useState, useCallback, useEffect, useRef } from 'react';
 import type { AnyRecord, RecordCategory } from '../types/records';
@@ -19,43 +21,80 @@ import {
 } from '../lib/supabase';
 import { useAuth } from './useAuth';
 
-const STORAGE_PREFIX = 'na_';
-const LEGACY_LOCAL_KEY = 'na-records';    // 兼容旧版本存储（老用户的数据不能丢！）
+// ★ v2: 更改前缀，让旧版 base64 缓存数据失效（用户确认全部清空重来）
+const STORAGE_PREFIX = 'na2_';
 
 function storageKey(category: RecordCategory): string {
   return `${STORAGE_PREFIX}${category}`;
 }
 
-/* ---------- 本地模式 helpers（旧行为 100% 兼容） ---------- */
+/* ---------- 本地存储 helpers ---------- */
 function loadLocal<T extends AnyRecord>(category: RecordCategory): T[] {
   try {
-    // 1) 先尝试分分类的 key
     const raw = localStorage.getItem(storageKey(category));
-    if (raw) return JSON.parse(raw) as T[];
-    // 2) 兼容旧版本 key：na-records 里所有分类混在一起
-    const legacy = localStorage.getItem(LEGACY_LOCAL_KEY);
-    if (legacy) {
-      const arr = (JSON.parse(legacy) as any[]).filter((r: any) => r.category === category) as T[];
-      // 迁移过来：存分类 key（下次就直接读分类 key）
-      localStorage.setItem(storageKey(category), JSON.stringify(arr));
-      return arr;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? (parsed as T[]) : [];
     }
     return [];
-  } catch {
+  } catch (e) {
+    console.error(`[useRecords:${category}] loadLocal 解析失败:`, e);
     return [];
   }
 }
+
 function saveLocal<T extends AnyRecord>(category: RecordCategory, arr: T[]): void {
-  localStorage.setItem(storageKey(category), JSON.stringify(arr));
+  try {
+    localStorage.setItem(storageKey(category), JSON.stringify(arr));
+  } catch (e) {
+    console.error(`[useRecords:${category}] saveLocal 写入失败:`, e);
+  }
 }
+
 function genLocalId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-/* ---------- 图片上传：Storage 桶 / localStorage base64 fallback ---------- */
-/**
- * 把 File 转 base64（本地模式 fallback）
- */
+/* ---------- 图片上传（只存 Storage URL，不降级 base64）---------- */
+export async function uploadRecordImage(file: File, opts?: { category?: RecordCategory }): Promise<string> {
+  // 本地模式（未配置 Supabase）→ 降级为 base64 仅用于本地存储
+  if (!IS_SUPABASE_CONFIGURED || !supabase) {
+    return fileToBase64(file);
+  }
+
+  // 云端模式：必须登录管理员才能上传到 Storage
+  try {
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData?.user) {
+      console.warn('[uploadRecordImage] 未登录管理员，图片仅存本地 base64');
+      return fileToBase64(file);
+    }
+
+    const safeExt = (file.name.split('.').pop() || 'jpg').toLowerCase();
+    const ext = /^(jpg|jpeg|png|gif|webp|bmp)$/.test(safeExt) ? safeExt : 'jpg';
+    const category = opts?.category ?? 'misc';
+    const path = `${category}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const { error } = await supabase.storage
+      .from(STORAGE_BUCKET_IMAGES)
+      .upload(path, file, { cacheControl: '31536000', upsert: false });
+
+    if (error) {
+      // Storage 上传失败：不降级为 base64 写入数据库，返回空字符串
+      // 这样数据库里 image_url 为 null，前端显示占位图，而不是存 1MB 的 base64
+      console.error('[uploadRecordImage] Storage 上传失败:', error.message);
+      console.error('  → 请检查：1) bucket record-images 是否已创建  2) RLS 策略邮箱是否正确');
+      throw new Error(`图片上传失败: ${error.message}（请确认 Storage 桶已创建且 RLS 邮箱正确）`);
+    }
+
+    return `${storagePublicUrlPrefix}/${path}`;
+  } catch (e: any) {
+    // 如果是我们自己 throw 的错误，直接向上抛
+    if (e?.message?.startsWith('图片上传失败')) throw e;
+    console.error('[uploadRecordImage] 异常:', e?.message ?? e);
+    throw new Error(`图片上传异常: ${e?.message ?? String(e)}`);
+  }
+}
+
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -65,116 +104,221 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-/**
- * 上传图片
- * - 云端模式 + 管理员：上传到 Supabase Storage → 返回公开 URL
- * - 其他：base64 内联（和旧行为一致）
- */
-export async function uploadRecordImage(file: File, opts?: { category?: RecordCategory }): Promise<string> {
-  if (IS_SUPABASE_CONFIGURED && supabase) {
-    // 用真实的 auth.getUser() 判断，而不是 localStorage hack
-    try {
-      const { data: userData } = await supabase.auth.getUser();
-      if (userData?.user) {
-        const safeExt = (file.name.split('.').pop() || 'jpg').toLowerCase();
-        const ext = /^(jpg|jpeg|png|gif|webp|bmp)$/.test(safeExt) ? safeExt : 'jpg';
-        const category = opts?.category ?? 'misc';
-        const path = `${category}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-        const { error } = await supabase.storage
-          .from(STORAGE_BUCKET_IMAGES)
-          .upload(path, file, { cacheControl: '31536000', upsert: false });
-        if (!error) {
-          return `${storagePublicUrlPrefix}/${path}`;
-        }
-        // 上传失败：fallback 到 base64，保证能存
-      }
-    } catch {
-      // auth 挂了就 fallback，不给用户报错
+/* ============================================================
+ *  云端记录 → 本地记录 映射
+ * ============================================================ */
+function mapCloudRowToLocal<T extends AnyRecord>(row: any): T {
+  const extra = row.extra && typeof row.extra === 'object' ? row.extra : {};
+  return {
+    id: String(row.id),
+    category: row.category,
+    title: row.title ?? extra.title ?? '',
+    description: row.description ?? extra.description ?? undefined,
+    review: row.description ?? extra.review ?? undefined,
+    content: row.description ?? extra.content ?? undefined,
+    rating: row.rating ?? extra.rating ?? undefined,
+    date: row.date ?? extra.date ?? undefined,
+    tags: Array.isArray(row.tags) ? (row.tags as string[]) : (extra.tags ?? []),
+    createdAt: row.created_at ?? new Date().toISOString(),
+    updatedAt: row.updated_at ?? row.created_at ?? new Date().toISOString(),
+    image: row.image_url ?? extra.image ?? undefined,
+    author: extra.author ?? undefined,
+    artist: extra.artist ?? undefined,
+    location: extra.location ?? undefined,
+    readDate: extra.readDate ?? undefined,
+    watchDate: extra.watchDate ?? undefined,
+    ...extra,
+  } as unknown as T;
+}
+
+/* ============================================================
+ *  本地记录 → 云端 payload
+ * ============================================================ */
+function buildCloudPayload(record: any, category: RecordCategory): Record<string, any> {
+  const img = record.image ?? record.imageUrl ?? null;
+  // ★ 关键修复：如果图片是 base64，不写入数据库（应为 Storage URL 或 null）
+  const safeImageUrl = img && typeof img === 'string' && img.startsWith('data:')
+    ? null  // base64 不入库，留 null
+    : img ?? null;
+
+  const finalDesc = record.description ?? record.review ?? record.content ?? null;
+  const finalDate = record.date ?? record.readDate ?? record.watchDate ?? null;
+
+  // 这些字段是 records 表的独立列，其他都塞进 extra
+  const columnKeys = new Set([
+    'id', 'category', 'createdAt', 'updatedAt',
+    'image', 'imageUrl', 'title', 'description', 'review', 'content',
+    'date', 'readDate', 'watchDate', 'tags', 'rating',
+  ]);
+  const extra: Record<string, any> = {};
+  for (const k of Object.keys(record)) {
+    if (!columnKeys.has(k) && record[k] !== undefined && record[k] !== null && record[k] !== '') {
+      extra[k] = record[k];
     }
   }
-  // 本地模式 / 未登录 / 上传失败 → base64 内联（兼容旧行为）
-  return fileToBase64(file);
+  // 显式确保关键字段进 extra
+  if (record.author)   extra.author   = record.author;
+  if (record.artist)   extra.artist   = record.artist;
+  if (record.location) extra.location = record.location;
+
+  return {
+    category,
+    title: record.title ?? null,
+    description: finalDesc,
+    image_url: safeImageUrl,
+    rating: typeof record.rating === 'number' ? record.rating : null,
+    date: finalDate,
+    tags: Array.isArray(record.tags) ? record.tags : [],
+    extra: Object.keys(extra).length ? extra : null,
+  };
 }
 
 /* ============================================================
  *  主 hook
  * ============================================================ */
 export function useRecords<T extends AnyRecord>(category: RecordCategory) {
-  const { isConfigured, isAdmin } = useAuth();
+  const { isConfigured, isAdmin, isLoading } = useAuth();
 
+  // 本地数据立即加载，作为真相源
   const [records, setRecords] = useState<T[]>(() => loadLocal<T>(category));
-  const [loading, setLoading] = useState<boolean>(isConfigured);
-  const [syncedCategory, setSyncedCategory] = useState<RecordCategory>(category);
+  const [cloudSyncing, setCloudSyncing] = useState<boolean>(false);
+  const [cloudError, setCloudError] = useState<string | null>(null);
 
-  /* ---------- 云端模式：首次挂载 / category 切换时拉一次 records 表 ---------- */
+  // ref 防止 effect 间竞态
+  const fetchReqIdRef = useRef<number>(0);
+  const hasFetchedCloudRef = useRef<boolean>(false);
+
+  /* ---------- 云端拉取（仅一次：auth 就绪后触发） ---------- */
   useEffect(() => {
-    setSyncedCategory(category);
-    if (!isConfigured || !supabase) {
-      setRecords(loadLocal<T>(category));
-      setLoading(false);
-      return;
-    }
-    let alive = true;
-    setLoading(true);
-    (async () => {
-      const { data, error } = await supabase
-        .from('records')
-        .select('*')
-        .eq('category', category)
-        .order('created_at', { ascending: false });
-      if (!alive) return;
-      if (error || !data) {
-        // 拉失败（比如 RLS 表还没建好） → fallback 本地，保证页面能看
-        setRecords(loadLocal<T>(category));
-      } else {
-        // 把 Supabase 行映射成前端需要的 AnyRecord shape
-        //   注意：AnyRecord 所有子类型图片字段统一叫 `image`，不是 imageUrl
-        //   扩展字段（extra JSON）：author / artist / location / content 等
-        const mapped: T[] = data.map((row: any) => {
-          const extra = row.extra && typeof row.extra === 'object' ? row.extra : {};
-          return {
-            id: String(row.id),
-            category: row.category,
-            title: row.title ?? (extra as any).title ?? '',
-            image: row.image_url ?? (extra as any).image ?? undefined,
-            rating: row.rating ?? (extra as any).rating ?? undefined,
-            date: row.date ?? (extra as any).date ?? undefined,
-            description: row.description ?? (extra as any).review ?? (extra as any).content ?? undefined,
-            review: row.description ?? (extra as any).review ?? undefined,
-            content: row.description ?? (extra as any).content ?? undefined,
-            tags: Array.isArray(row.tags) ? (row.tags as string[]) : ((extra as any).tags ?? []),
-            createdAt: row.created_at ?? new Date().toISOString(),
-            updatedAt: row.updated_at ?? row.created_at ?? new Date().toISOString(),
-            ...extra,
-          } as T;
+    if (!isConfigured || !supabase) return;
+    if (isLoading) return;
+    if (hasFetchedCloudRef.current) return;
+    hasFetchedCloudRef.current = true;
+
+    const reqId = ++fetchReqIdRef.current;
+    setCloudSyncing(true);
+    setCloudError(null);
+    console.log(`[useRecords:${category}] 启动云端拉取 (reqId=${reqId})`);
+
+    const fetchCloud = async (attempt: number): Promise<void> => {
+      if (fetchReqIdRef.current !== reqId) return;
+      try {
+        // ★ 列表查询排除 image_url（大字段），按需懒加载
+        const { data, error } = await supabase!
+          .from('records')
+          .select('id, category, title, description, rating, date, tags, extra, created_at, updated_at')
+          .eq('category', category)
+          .order('created_at', { ascending: false });
+
+        if (fetchReqIdRef.current !== reqId) return;
+
+        if (error || !data) {
+          if (attempt < 2) {
+            console.warn(`[useRecords:${category}] 拉取失败(第${attempt}次)，1.5秒后重试:`, error?.message);
+            await new Promise((r) => setTimeout(r, 1500));
+            if (fetchReqIdRef.current !== reqId) return;
+            return fetchCloud(attempt + 1);
+          }
+          console.error(`[useRecords:${category}] 云端拉取彻底失败:`, error?.message);
+          setCloudError(error?.message ?? '未知错误');
+          return;
+        }
+
+        console.log(`[useRecords:${category}] 云端拉取成功: ${data.length} 条`);
+
+        const cloud: T[] = data.map((row: any) => mapCloudRowToLocal<T>(row));
+
+        // 合并策略：云端为主，本地独有记录追加到末尾
+        setRecords((prevLocal) => {
+          const localMap = new Map(prevLocal.map((r: any) => [String(r.id), r]));
+          const cloudIds = new Set(cloud.map((r: any) => String(r.id)));
+
+          const merged: T[] = cloud.map((c: any) => {
+            const l = localMap.get(String(c.id));
+            return l ? { ...l, ...c } as T : c as T;
+          });
+
+          const localOnly = prevLocal.filter((r: any) => !cloudIds.has(String(r.id)));
+          if (localOnly.length > 0) {
+            console.log(`[useRecords:${category}] 合并云端 ${cloud.length} + 本地独有 ${localOnly.length} 条`);
+            merged.push(...localOnly);
+          }
+
+          saveLocal(category, merged);
+          return merged;
         });
-        setRecords(mapped);
+      } catch (e: any) {
+        if (fetchReqIdRef.current !== reqId) return;
+        if (attempt < 2) {
+          console.warn(`[useRecords:${category}] 拉取异常(第${attempt}次)，1.5秒后重试:`, e?.message);
+          await new Promise((r) => setTimeout(r, 1500));
+          if (fetchReqIdRef.current !== reqId) return;
+          return fetchCloud(attempt + 1);
+        }
+        console.error(`[useRecords:${category}] 云端拉取异常:`, e?.message);
+        setCloudError(e?.message ?? String(e));
       }
-      setLoading(false);
-    })();
-    return () => { alive = false; };
-  }, [isConfigured, category, supabase]);
+    };
 
-  /* ---------- 双保险持久化：只要不是「管理员 + 云端 100% 已写入」就写回 localStorage ---------- */
-  // 规则：
-  //  1) 本地模式（!isConfigured）→ 写 localStorage（旧行为不变）
-  //  2) 云端模式 + 未登录管理员（访客没权限写远端）→ 写 localStorage（防止访客点了新增后刷新没）
-  //  3) 云端模式 + 是管理员但写入失败（网络/RLS报错）→ 仍然落 localStorage（兜底：下次登录自动迁上去）
-  useEffect(() => {
-    if (syncedCategory === category && !isAdmin) {
-      saveLocal(category, records);
-    }
-  }, [isAdmin, category, syncedCategory, records]);
+    fetchCloud(1).then(() => {
+      if (fetchReqIdRef.current === reqId) {
+        setCloudSyncing(false);
+      }
+    });
+  }, [isConfigured, category, isLoading]);
 
-  // 云端模式下管理员写入成功后的「已同步」标记（用 weakMap，只在内存里）——真实已写入过的就不再重复存 localStorage
-  const persistedInCloudRef = useRef<Set<string>>(new Set());
+  /* ---------- 懒加载：按需获取单条记录的图片 ---------- */
+  const loadRecordDetails = useCallback(
+    async (id: string): Promise<void> => {
+      if (!isConfigured || !supabase) return;
+      try {
+        const numId = Number.isFinite(Number(id)) ? Number(id) : id;
+        const { data, error } = await supabase
+          .from('records')
+          .select('id, image_url, extra')
+          .eq('id', numId)
+          .maybeSingle();
+
+        if (error || !data) {
+          console.warn(`[useRecords:${category}] 懒加载失败 (id=${id}):`, error?.message);
+          return;
+        }
+
+        const imageUrl = (data as any).image_url ?? undefined;
+        const extra = (data as any).extra && typeof (data as any).extra === 'object' ? (data as any).extra : {};
+
+        setRecords((prev) => {
+          const next = prev.map((r) => {
+            if (r.id === id) {
+              const existingImg = (r as any).image;
+              return {
+                ...r,
+                image: imageUrl ?? existingImg ?? (extra as any)?.image ?? undefined,
+                ...(extra as any),
+              } as T;
+            }
+            return r;
+          });
+          saveLocal(category, next);
+          return next;
+        });
+      } catch (e: any) {
+        console.warn(`[useRecords:${category}] 懒加载异常 (id=${id}):`, e?.message);
+      }
+    },
+    [category, isConfigured],
+  );
 
   /* ---------- 增：addRecord ---------- */
   const addRecord = useCallback(
     async (data: Omit<T, 'id' | 'category' | 'createdAt' | 'updatedAt'>) => {
-      const now = new Date().toISOString();
+      // ★ 关键修复：验证 title 不为空
+      const title = (data as any).title;
+      if (!title || typeof title !== 'string' || !title.trim()) {
+        throw new Error('标题不能为空');
+      }
 
-      // 1) 前端立即更新（乐观更新）
+      const now = new Date().toISOString();
       const optimistic: T = {
         ...(data as any),
         id: genLocalId(),
@@ -182,139 +326,132 @@ export function useRecords<T extends AnyRecord>(category: RecordCategory) {
         createdAt: now,
         updatedAt: now,
       } as T;
+
+      // 1. 立即写本地（真相源）
       setRecords((prev) => {
         const next = [optimistic, ...prev];
-        // 本地模式 / 不是管理员：立刻落 localStorage（不相信 useEffect，马上就保存）
-        if (!isConfigured || !isAdmin) saveLocal(category, next);
+        saveLocal(category, next);
         return next;
       });
 
-      // 2) 云端模式 + 管理员 → 远程写入
+      // 2. 云端写入（仅管理员）
       if (isConfigured && isAdmin && supabase) {
-        const anyO = optimistic as any;
-        const img = anyO.image ?? anyO.imageUrl;
-        const finalDesc = anyO.description ?? anyO.review ?? anyO.content;
-        const finalDate = anyO.date ?? anyO.readDate ?? anyO.watchDate;
-        const commonKeys = new Set(['id', 'category', 'createdAt', 'updatedAt', 'image', 'imageUrl', 'title', 'description', 'review', 'content', 'date', 'readDate', 'watchDate', 'tags', 'rating']);
-        const extra: Record<string, any> = {};
-        for (const k of Object.keys(anyO)) {
-          if (!commonKeys.has(k) && anyO[k] !== undefined && anyO[k] !== null) extra[k] = anyO[k];
-        }
-        if (anyO.author)   extra.author   = anyO.author;
-        if (anyO.artist)   extra.artist   = anyO.artist;
-        if (anyO.location) extra.location = anyO.location;
-
-        const payload: Record<string, any> = {
-          category,
-          title: anyO.title ?? null,
-          description: finalDesc ?? null,
-          image_url: img ?? null,
-          rating: typeof anyO.rating === 'number' ? anyO.rating : null,
-          date: finalDate ?? null,
-          tags: Array.isArray(anyO.tags) ? anyO.tags : [],
-          extra: Object.keys(extra).length ? extra : null,
-        };
-        const { data: inserted, error } = await supabase
-          .from('records')
-          .insert(payload)
-          .select('*')
-          .single();
-        if (!error && inserted) {
-          const realId = String(inserted.id);
-          // 成功：本地临时 id 换成远程真实 id，并标记"已在云端持久化"
-          persistedInCloudRef.current.add(realId);
-          setRecords((prev) =>
-            prev.map((r) => (r.id === optimistic.id ? { ...r, id: realId } : r)),
-          );
-        } else {
-          // 云端写入失败（网络/RLS）→ 兜底落 localStorage，下次登录自动迁移
-          setRecords((prev) => { saveLocal(category, prev); return prev; });
+        const payload = buildCloudPayload(optimistic, category);
+        try {
+          const { data: inserted, error } = await supabase
+            .from('records')
+            .insert(payload)
+            .select('*')
+            .single();
+          if (!error && inserted) {
+            const realId = String(inserted.id);
+            setRecords((prev) => {
+              const next = prev.map((r) =>
+                r.id === optimistic.id ? { ...r, id: realId } as T : r
+              );
+              saveLocal(category, next);
+              return next;
+            });
+            console.log(`[useRecords:${category}] 云端写入成功，新 id=${realId}`);
+          } else {
+            console.warn(`[useRecords:${category}] 云端写入失败，已保留本地:`, error?.message);
+          }
+        } catch (e: any) {
+          console.warn(`[useRecords:${category}] 云端写入异常，已保留本地:`, e?.message);
         }
       }
       return optimistic;
     },
-    [category, isConfigured, isAdmin, supabase],
+    [category, isConfigured, isAdmin],
   );
 
   /* ---------- 改：updateRecord ---------- */
   const updateRecord = useCallback(
     async (id: string, patch: Partial<T>) => {
       const now = new Date().toISOString();
-      // 乐观更新
+
+      // 1. 立即写本地
       setRecords((prev) => {
-        const next = prev.map((r) => (r.id === id ? { ...r, ...(patch as any), updatedAt: now } as T : r));
-        if (!isConfigured || !isAdmin) saveLocal(category, next);
+        const next = prev.map((r) =>
+          r.id === id ? { ...r, ...(patch as any), updatedAt: now } as T : r
+        );
+        saveLocal(category, next);
         return next;
       });
-      if (isConfigured && isAdmin && supabase) {
-        const anyP = patch as any;
-        const img = anyP.image ?? anyP.imageUrl;
-        const finalDesc = anyP.description ?? anyP.review ?? anyP.content;
-        const finalDate = anyP.date ?? anyP.readDate ?? anyP.watchDate;
-        const commonKeys = new Set(['id', 'category', 'createdAt', 'updatedAt', 'image', 'imageUrl', 'title', 'description', 'review', 'content', 'date', 'readDate', 'watchDate', 'tags', 'rating']);
-        const extraPatch: Record<string, any> = {};
-        for (const k of Object.keys(anyP)) {
-          if (!commonKeys.has(k) && anyP[k] !== undefined) extraPatch[k] = anyP[k];
-        }
-        if (anyP.author)   extraPatch.author   = anyP.author;
-        if (anyP.artist)   extraPatch.artist   = anyP.artist;
-        if (anyP.location) extraPatch.location = anyP.location;
 
-        const payload: Record<string, any> = { updated_at: now };
-        if ('title' in anyP) payload.title = anyP.title ?? null;
-        if (finalDesc !== undefined) payload.description = finalDesc ?? null;
-        if (img !== undefined) payload.image_url = img ?? null;
-        if ('rating' in anyP) payload.rating = typeof anyP.rating === 'number' ? anyP.rating : null;
-        if (finalDate !== undefined) payload.date = finalDate ?? null;
-        if ('tags' in anyP) payload.tags = Array.isArray(anyP.tags) ? anyP.tags : [];
-        if (Object.keys(extraPatch).length) {
+      // 2. 云端更新（仅管理员）
+      if (isConfigured && isAdmin && supabase) {
+        const numId = Number.isFinite(Number(id)) ? Number(id) : id;
+        const payload = buildCloudPayload(patch, category);
+        payload.updated_at = now;
+
+        // extra 需要先读旧值再合并
+        if (payload.extra) {
           try {
             const { data: old } = await supabase
               .from('records')
               .select('extra')
-              .eq('id', Number.isFinite(Number(id)) ? Number(id) : id)
+              .eq('id', numId)
               .maybeSingle();
-            payload.extra = { ...((old as any)?.extra ?? {}), ...extraPatch };
+            payload.extra = { ...((old as any)?.extra ?? {}), ...payload.extra };
           } catch { /* ignore */ }
         }
-        const { error } = await supabase
-          .from('records')
-          .update(payload)
-          .eq('id', Number.isFinite(Number(id)) ? Number(id) : id);
-        if (error) {
-          setRecords((prev) => { saveLocal(category, prev); return prev; });
-        } else {
-          persistedInCloudRef.current.add(id);
+
+        try {
+          const { error } = await supabase
+            .from('records')
+            .update(payload)
+            .eq('id', numId);
+          if (error) {
+            console.warn(`[useRecords:${category}] 云端更新失败:`, error.message);
+          }
+        } catch (e: any) {
+          console.warn(`[useRecords:${category}] 云端更新异常:`, e?.message);
         }
       }
     },
-    [category, isConfigured, isAdmin, supabase],
+    [category, isConfigured, isAdmin],
   );
 
   /* ---------- 删：deleteRecord ---------- */
   const deleteRecord = useCallback(
     async (id: string) => {
+      // 1. 立即删本地
       setRecords((prev) => {
         const next = prev.filter((r) => r.id !== id);
-        if (!isConfigured || !isAdmin) saveLocal(category, next);
+        saveLocal(category, next);
         return next;
       });
+
+      // 2. 云端删除（仅管理员）
       if (isConfigured && isAdmin && supabase) {
-        const { error } = await supabase
-          .from('records')
-          .delete()
-          .eq('id', Number.isFinite(Number(id)) ? Number(id) : id);
-        if (error) {
-          // 远端删失败，本地记录依然保留在 localStorage 兜底
-          setRecords((prev) => { saveLocal(category, prev); return prev; });
+        const numId = Number.isFinite(Number(id)) ? Number(id) : id;
+        try {
+          const { error } = await supabase
+            .from('records')
+            .delete()
+            .eq('id', numId);
+          if (error) console.warn(`[useRecords:${category}] 云端删除失败:`, error.message);
+        } catch (e: any) {
+          console.warn(`[useRecords:${category}] 云端删除异常:`, e?.message);
         }
       }
     },
-    [category, isConfigured, isAdmin, supabase],
+    [category, isConfigured, isAdmin],
   );
 
   /* ---------- 查：getRecord ---------- */
   const getRecord = useCallback((id: string) => records.find((r) => r.id === id) ?? null, [records]);
 
-  return { records, loading, addRecord, updateRecord, deleteRecord, getRecord };
+  return {
+    records,
+    loading: false,
+    syncing: cloudSyncing,
+    cloudError,
+    addRecord,
+    updateRecord,
+    deleteRecord,
+    getRecord,
+    loadRecordDetails,
+  };
 }

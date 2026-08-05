@@ -20,18 +20,17 @@ import {
 import type { AnyRecord, RecordCategory } from '../types/records';
 
 const CATEGORIES: RecordCategory[] = ['books', 'movies', 'notes', 'albums', 'travel', 'concerts'];
-const MIGRATED_KEY = 'na-migrated-v1';
-// 历史上旧版存储混用了不同的 key，比如 na-notebook / na-films / na-records
-// 这里统一做兼容处理：先按新 key 读，读不到再读旧别名
+// ★ v2: 更新迁移标记，让旧版标记失效（用户确认全部清空重来）
+const MIGRATED_KEY = 'na-migrated-v2';
+// v2 只读 na2_ 前缀的数据（旧 na_ 前缀的 base64 数据不迁移，用户确认全部清空重来）
 const KEY_ALIASES: Record<RecordCategory, string[]> = {
-  books:    ['na_books',    'na-books',    'na-bookshelf'],
-  movies:   ['na_movies',   'na-movies',   'na-films'],
-  notes:    ['na_notes',    'na-notes',    'na-notebook', 'na-journal'],
-  albums:   ['na_albums',   'na-albums'],
-  travel:   ['na_travel',   'na-travel',   'na-trip'],
-  concerts: ['na_concerts', 'na-concerts', 'na-livehouse'],
+  books:    ['na2_books'],
+  movies:   ['na2_movies'],
+  notes:    ['na2_notes'],
+  albums:   ['na2_albums'],
+  travel:   ['na2_travel'],
+  concerts: ['na2_concerts'],
 };
-const LEGACY_LOCAL_KEY = 'na-records';
 
 function base64ToBlob(base64: string): Blob | null {
   try {
@@ -61,17 +60,23 @@ function guessExtFromMime(mime: string): string {
   }
 }
 
-async function uploadBase64ToStorage(category: RecordCategory, imageUrl: string): Promise<string> {
+async function uploadBase64ToStorage(category: RecordCategory, imageUrl: string): Promise<string | null> {
   if (!imageUrl.startsWith('data:image/')) return imageUrl;    // 已经是 http URL，不变
-  if (!supabase) return imageUrl;
+  if (!supabase) return null;                                    // 没配置 Supabase，返回 null（不写 base64 入库）
   const blob = base64ToBlob(imageUrl);
-  if (!blob) return imageUrl;
+  if (!blob) return null;                                        // 解码失败，返回 null
   const ext = guessExtFromMime(blob.type);
   const path = `${category}/migrate-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
   const { error } = await supabase.storage
     .from(STORAGE_BUCKET_IMAGES)
     .upload(path, blob, { cacheControl: '31536000', upsert: false, contentType: blob.type });
-  if (error) return imageUrl;                                    // 上传失败就保留原 base64
+  if (error) {
+    // ★ 关键修复：上传失败不返回原 base64（会导致数据库 image_url 字段存 1MB+ 的 base64）
+    // 而是返回 null，让数据库 image_url 为 null，前端显示占位图
+    console.error(`[migration] Storage 上传失败 (${category}):`, error.message);
+    console.error('  → 请检查：1) bucket record-images 是否已创建  2) RLS 策略邮箱是否正确');
+    return null;
+  }
   return `${storagePublicUrlPrefix}/${path}`;
 }
 
@@ -80,7 +85,7 @@ function readLocalAll(): Map<RecordCategory, AnyRecord[]> {
   for (const c of CATEGORIES) {
     try {
       let arr: AnyRecord[] | null = null;
-      // 1) 按别名依次尝试
+      // 按别名依次尝试（v2 只读 na2_ 前缀）
       for (const alias of KEY_ALIASES[c]) {
         const raw = localStorage.getItem(alias);
         if (raw) {
@@ -93,15 +98,6 @@ function readLocalAll(): Map<RecordCategory, AnyRecord[]> {
           } catch { /* ignore alias parse error */ }
         }
       }
-      // 2) 兼容旧版 na-records（所有分类混在一起）
-      if (!arr) {
-        const legacy = localStorage.getItem(LEGACY_LOCAL_KEY);
-        if (legacy) {
-          const parsed = (JSON.parse(legacy) as AnyRecord[]).filter((r: any) => r.category === c);
-          if (parsed.length) arr = parsed;
-        }
-      }
-      // 3) 正常默认空
       if (!arr) arr = [];
       out.set(c, arr);
     } catch {
@@ -143,11 +139,11 @@ export async function runLocalToSupabaseMigration(): Promise<{
     for (const r of list) {
       // AnyRecord 里所有子类的图片字段都是 image?（不是 imageUrl）
       const anyR = r as any;
-      let url = anyR.image ?? anyR.imageUrl;  // 两种可能都兼容下
+      let url: string | null = anyR.image ?? anyR.imageUrl ?? null;
       if (url && url.startsWith('data:image/')) {
         const newUrl = await uploadBase64ToStorage(cat, url);
-        if (newUrl !== url) photosUploaded++;
-        url = newUrl;
+        if (newUrl && newUrl !== url) photosUploaded++;
+        url = newUrl;  // 可能是 Storage URL 或 null（上传失败时不写 base64 入库）
       }
 
       // 把每分类的 扩展字段 + 通用字段 都落到 Supabase 的列：

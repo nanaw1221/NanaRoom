@@ -9,7 +9,7 @@
 //  - 管理员首次登录成功：自动执行 localStorage → Supabase 迁移
 //    （旧单机数据 + 上传的 base64 照片自动进云端 Storage）
 // ============================================================
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode, useRef } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useMemo, type ReactNode, useRef } from 'react';
 import { supabase, IS_SUPABASE_CONFIGURED } from '../lib/supabase';
 import { runLocalToSupabaseMigration } from '../lib/migrateLocalToSupabase';
 import type { Session, User } from '@supabase/supabase-js';
@@ -56,21 +56,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     let mounted = true;
-    // 1. 先取一次当前 session
+    // 1. 先取一次当前 session（带超时保护，防止 getSession 卡住导致 isLoading 永远为 true）
     (async () => {
-      const { data } = await supabase.auth.getSession();
-      if (!mounted) return;
-      const nextUser = data.session?.user ?? null;
-      const wasLogged = !!prevUserRef.current;
-      prevUserRef.current = nextUser;
-      setSession(data.session);
-      setUser(nextUser);
-      setIsLoading(false);
-      // 首次挂载就发现已登录（上次登录了没退出）→ 触发一次迁移
-      if (nextUser && !wasLogged) {
-        void triggerMigration();
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (!mounted) return;
+        const nextUser = data.session?.user ?? null;
+        const wasLogged = !!prevUserRef.current;
+        prevUserRef.current = nextUser;
+        setSession(data.session);
+        setUser(nextUser);
+        setIsLoading(false);
+        // 首次挂载就发现已登录（上次登录了没退出）→ 触发一次迁移
+        if (nextUser && !wasLogged) {
+          void triggerMigration();
+        }
+      } catch (e) {
+        console.error('[useAuth] getSession 异常:', e);
+        if (mounted) setIsLoading(false);
       }
     })();
+
+    // 超时保护：3 秒后强制结束 loading，防止网络问题导致永久卡死
+    const timeoutId = setTimeout(() => {
+      if (mounted) {
+        setIsLoading((prev) => {
+          if (prev) console.warn('[useAuth] getSession 超时 3s，强制结束 loading');
+          return false;
+        });
+      }
+    }, 3000);
+
     // 2. 订阅登录/登出事件
     const { data: listener } = supabase.auth.onAuthStateChange((evt, next) => {
       const nextUser = next?.user ?? null;
@@ -78,12 +94,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       prevUserRef.current = nextUser;
       setSession(next);
       setUser(nextUser);
+      setIsLoading(false);
       // SIGNED_IN：从未登录→登录成功 → 自动迁移
       if (evt === 'SIGNED_IN' && nextUser && !wasLogged) {
         void triggerMigration();
       }
     });
-    return () => { mounted = false; listener?.subscription.unsubscribe(); };
+    return () => {
+      mounted = false;
+      clearTimeout(timeoutId);
+      listener?.subscription.unsubscribe();
+    };
   }, [triggerMigration]);
 
   // --- 邮箱密码登录 ---
@@ -105,7 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   //   ↑ 云端模式（已配置 Supabase）：只有登录了才是管理员
   const isGuest = IS_SUPABASE_CONFIGURED ? !user : false;
 
-  const value: AuthContextValue = {
+  const value: AuthContextValue = useMemo(() => ({
     isConfigured: IS_SUPABASE_CONFIGURED,
     isAdmin,
     isGuest,
@@ -116,7 +137,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     triggerMigration,
     signInWithPassword,
     signOut,
-  };
+  }), [isAdmin, isGuest, isLoading, session, user, migrationStatus, triggerMigration, signInWithPassword, signOut]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

@@ -106,6 +106,20 @@ export default function AdminLoginModal({ open, onClose }: Props) {
                   </div>
                 )}
 
+                {/* 运行时诊断：当前模式 + 配置状态 */}
+                <div className="rounded-xl p-3 mb-3 text-[11px] leading-relaxed"
+                  style={{
+                    background: '#fffdf7',
+                    border: '1.5px solid #d9c8aa',
+                    color: '#6a5338',
+                  }}>
+                  <div className="font-bold mb-1" style={{ color: '#5a4223' }}>⚙️ 运行时状态</div>
+                  <div>模式：{isConfigured ? '☁️ 云端同步' : '💾 纯本地'}</div>
+                  {isConfigured && (
+                    <div>身份：{user ? '🛡 管理员（可读写云端）' : '👁 访客（只读云端）'}</div>
+                  )}
+                </div>
+
                 {/* 本地数据 → 云端同步状态（迁移状态） */}
                 {isConfigured && (
                   <div className="rounded-xl p-3 mb-4 text-[12px]"
@@ -193,6 +207,15 @@ export default function AdminLoginModal({ open, onClose }: Props) {
             ) : (
               /* 未登录：表单 */
               <form onSubmit={handleLogin} className="flex flex-col gap-3">
+                {/* 运行时诊断：访客也可见，方便排查 */}
+                <div className="rounded-xl p-2.5 mb-1 text-[11px] leading-relaxed"
+                  style={{
+                    background: '#fffdf7',
+                    border: '1.5px solid #d9c8aa',
+                    color: '#6a5338',
+                  }}>
+                  <div>模式：{isConfigured ? '☁️ 云端同步（访客只读）' : '💾 纯本地模式'}</div>
+                </div>
                 <div>
                   <label className="block text-[12px] mb-1" style={{ color: '#6a5338', letterSpacing: '0.8px' }}>邮箱</label>
                   <input

@@ -1,20 +1,21 @@
 -- =================================================================
---  NanaRoom  ·  Supabase 一键初始化 SQL
+--  NanaRoom  ·  Supabase 一键初始化 SQL（v2 · 2026-08-05 重写）
 --  用法：
---    1) 打开 https://supabase.com → 新建 Project → 进入项目
+--    1) 打开 https://supabase.com → 进入项目
 --    2) 左侧菜单 SQL Editor → New Query → 把整个文件粘贴进去 → Run
---    3) 找到下面两行的 YOUR_ADMIN_EMAIL@example.com
---       改成你注册/创建管理员时使用的真实邮箱，再 Run 一次
---    4) 去 Storage → Create bucket → 名: record-images, 勾 Make public
+--    3) 全部语句幂等，可重复运行；下面已写死管理员邮箱
+--       lilisnuonuo@gmail.com，如需修改直接改下面两行
 -- =================================================================
+
+-- 管理员邮箱：lilisnuonuo@gmail.com（已写死，换邮箱时全文搜索替换即可）
 
 -- 1. 扩展
 create extension if not exists "pgcrypto";
 
--- 2. records 表（如果不存在就建）
+-- 2. records 表
 create table if not exists public.records (
   id          bigserial primary key,
-  category    text not null,           -- notebook / books / films / albums / travel / concerts
+  category    text not null,
   title       text,
   description text,
   image_url   text,
@@ -28,7 +29,7 @@ create table if not exists public.records (
 create index if not exists records_category_idx
   on public.records (category, created_at desc);
 
--- 3. 打开行级安全（RLS），默认全拒绝
+-- 3. 打开行级安全（RLS）
 alter table public.records enable row level security;
 
 -- 4. 读策略：任何人（含匿名访客）都能读
@@ -36,21 +37,17 @@ drop policy if exists "Public can read records" on public.records;
 create policy "Public can read records"
   on public.records for select using (true);
 
--- 5. 写策略：只有管理员邮箱 可以增/改/删
---    ⚠️ 把下面两个邮箱改成你真实的管理员邮箱后，再 Run 一次！
+-- 5. 写策略：只有管理员邮箱可以增/改/删
 drop policy if exists "Admin can write records" on public.records;
 create policy "Admin can write records"
   on public.records for all
-  using     (auth.jwt() ->> 'email' = 'YOUR_ADMIN_EMAIL@example.com')
-  with check (auth.jwt() ->> 'email' = 'YOUR_ADMIN_EMAIL@example.com');
+  using     (auth.jwt() ->> 'email' = 'lilisnuonuo@gmail.com')
+  with check (auth.jwt() ->> 'email' = 'lilisnuonuo@gmail.com');
 
 -- =================================================================
---  Storage 桶（运行完上面后，请在控制台手动建桶，然后执行下面这 3 句）
---    Storage → Create bucket
---      Name: record-images
---      Make public: ✅ 打勾
---      File size limit: 5 MB (建议)
+--  Storage 桶（存上传的图片）
 -- =================================================================
+-- 6. 创建 record-images 桶（公开可读，5MB 限制）
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
   'record-images',
@@ -61,17 +58,38 @@ values (
 )
 on conflict (id) do nothing;
 
--- Storage 读：匿名公开可读
+-- 7. Storage 读：匿名公开可读
 drop policy if exists "Public read record-images" on storage.objects;
 create policy "Public read record-images"
   on storage.objects for select
   using (bucket_id = 'record-images');
 
--- Storage 写：只有管理员邮箱 可以上传 / 删除
+-- 8. Storage 写：只有管理员邮箱可以上传/删除
 drop policy if exists "Admin write record-images" on storage.objects;
 create policy "Admin write record-images"
   on storage.objects for all
+  using (
+    bucket_id = 'record-images' and
+    auth.jwt() ->> 'email' = 'lilisnuonuo@gmail.com'
+  )
   with check (
     bucket_id = 'record-images' and
-    auth.jwt() ->> 'email' = 'YOUR_ADMIN_EMAIL@example.com'
+    auth.jwt() ->> 'email' = 'lilisnuonuo@gmail.com'
   );
+
+-- =================================================================
+--  清空旧数据（如果之前有 base64 图片的脏数据，这里一键清空）
+--  ⚠️ 这会删除 records 表所有数据！如果不想删除，注释掉下面这行
+-- =================================================================
+truncate table public.records restart identity;
+
+-- =================================================================
+--  验证（运行后应该在结果里看到 bucket 存在 + 策略正确）
+-- =================================================================
+select 'bucket' as type, id as name, public as is_public
+from storage.buckets where id = 'record-images';
+
+select 'policy' as type, policyname, cmd
+from pg_policies
+where tablename in ('records', 'objects')
+order by tablename, policyname;

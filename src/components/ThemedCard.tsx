@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { AnyRecord, CategoryDef } from '../types/records';
-import { useRecords } from '../hooks/useRecords';
+import { useRecords, uploadRecordImage } from '../hooks/useRecords';
 
 interface ThemedCardProps {
   category: CategoryDef;
@@ -136,10 +136,15 @@ function useGridView(categoryKey: string): boolean {
 
 
 /* ===== Image Upload (Milki 票据风) ===== */
-const ImageUpload = ({ value, onChange }: { value: string; onChange: (v: string) => void }) => {
+const ImageUpload = ({ value, onChange, onFileChange }: {
+  value: string;
+  onChange: (v: string) => void;
+  onFileChange?: (file: File | null) => void;
+}) => {
   const fileRef = useRef<HTMLInputElement>(null);
   // 内部维护预览状态，实现即时UI反馈
   const [preview, setPreview] = useState<string>(value);
+  const fileStoreRef = useRef<File | null>(null);
 
   // 当外部value变化时（比如加载编辑数据），同步更新预览
   useEffect(() => {
@@ -158,11 +163,13 @@ const ImageUpload = ({ value, onChange }: { value: string; onChange: (v: string)
       alert('图片大小不能超过 5MB');
       return;
     }
+    fileStoreRef.current = file;
+    onFileChange?.(file);
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result as string;
-      setPreview(result);       // 立即更新预览，UI有反馈
-      onChange(result);         // ★ 直接写入React状态（不再通过隐藏DOM中转）
+      setPreview(result);
+      onChange(result);
     };
     reader.onerror = () => {
       alert('图片读取失败，请重试');
@@ -173,8 +180,10 @@ const ImageUpload = ({ value, onChange }: { value: string; onChange: (v: string)
   };
 
   const handleRemove = () => {
-    setPreview('');    // 立即清空预览
-    onChange('');      // 通知外部
+    fileStoreRef.current = null;
+    onFileChange?.(null);
+    setPreview('');
+    onChange('');
   };
 
   return (
@@ -218,15 +227,37 @@ const ImageUpload = ({ value, onChange }: { value: string; onChange: (v: string)
 
 /* ===== 主组件：Milki Receipt 风格卡片 ===== */
 const ThemedCard = ({ category, isOpen, onClose, canEdit = true }: ThemedCardProps) => {
-  const { records, addRecord, updateRecord, deleteRecord } = useRecords<AnyRecord>(category.key);
+  const { records, syncing, cloudError, addRecord, updateRecord, deleteRecord, loadRecordDetails } = useRecords<AnyRecord>(category.key);
   const [view, setView] = useState<View>('list');
   const [editingRecord, setEditingRecord] = useState<AnyRecord | null>(null);
-  // ★ 关键修复：用React状态管理表单数据（不再依赖document.getElementById读DOM）
   const [formData, setFormData] = useState<Record<string, string | string[]>>({});
   const t = receiptThemes[category.key] || receiptThemes.notes;
   const isGridView = useGridView(category.key);
+  const pendingFilesRef = useRef<Map<string, File>>(new Map());
+  const [uploading, setUploading] = useState(false);
+  const loadedImagesRef = useRef<Set<string>>(new Set());
 
-  // 初始化表单数据（进入add/edit视图时自动填充）
+  /* 懒加载：为没有图片的记录逐个加载图片（仅在卡片打开时） */
+  useEffect(() => {
+    if (!isOpen) return;
+    const recordsNeedingImages = records.filter(
+      (r) => !(r as AnyRecord).image && !loadedImagesRef.current.has(r.id)
+    );
+    if (recordsNeedingImages.length === 0) return;
+
+    let cancelled = false;
+    const loadImages = async () => {
+      for (const r of recordsNeedingImages) {
+        if (cancelled) break;
+        loadedImagesRef.current.add(r.id);
+        await loadRecordDetails(r.id);
+      }
+    };
+    loadImages();
+    return () => { cancelled = true; };
+  }, [records, isOpen, loadRecordDetails]);
+
+
   const initFormData = useCallback((record?: AnyRecord | null) => {
     const data: Record<string, string | string[]> = {};
     category.fields.forEach((f) => {
@@ -240,47 +271,82 @@ const ThemedCard = ({ category, isOpen, onClose, canEdit = true }: ThemedCardPro
     setFormData(data);
   }, [category.fields]);
 
-  // 视图切换时自动初始化表单
   useEffect(() => {
     if (view === 'add') initFormData(null);
     else if (view === 'edit' && editingRecord) initFormData(editingRecord);
   }, [view, editingRecord, initFormData]);
 
-  // 更新单个表单字段
   const updateFormField = useCallback((name: string, value: string | string[]) => {
     setFormData((prev) => ({ ...prev, [name]: value }));
+  }, []);
+
+  /* 详情视图：懒加载图片 */
+  useEffect(() => {
+    if (view === 'detail' && editingRecord && !(editingRecord as AnyRecord).image) {
+      loadedImagesRef.current.add(editingRecord.id);
+      loadRecordDetails(editingRecord.id);
+    }
+  }, [view, editingRecord, loadRecordDetails]);
+
+  const handleFileChange = useCallback((fieldName: string, file: File | null) => {
+    if (file) {
+      pendingFilesRef.current.set(fieldName, file);
+    } else {
+      pendingFilesRef.current.delete(fieldName);
+    }
   }, []);
 
   const resetView = useCallback(() => {
     setView('list');
     setEditingRecord(null);
     setFormData({});
+    pendingFilesRef.current.clear();
+    setUploading(false);
+    loadedImagesRef.current.clear();
   }, []);
 
   const handleClose = useCallback(() => { resetView(); onClose(); }, [onClose, resetView]);
 
-  // ★ 关键修复：直接从React状态读取数据保存（不再遍历DOM）
-  const handleSave = useCallback(() => {
-    const data: Record<string, string | string[]> = {};
-    category.fields.forEach((f) => {
-      const val = formData[f.name];
-      if (f.type === 'tags') {
-        data[f.name] = Array.isArray(val)
-          ? val
-          : typeof val === 'string' && val
+  const handleSave = useCallback(async () => {
+    setUploading(true);
+    try {
+      const data: Record<string, string | string[]> = {};
+      for (const f of category.fields) {
+        const val = formData[f.name];
+        if (f.type === 'image') {
+          const pendingFile = pendingFilesRef.current.get(f.name);
+          if (pendingFile) {
+            // uploadRecordImage 在云端模式下会 throw（不再静默降级 base64）
+            const url = await uploadRecordImage(pendingFile, { category: category.key });
+            data[f.name] = url;
+            pendingFilesRef.current.delete(f.name);
+          } else {
+            data[f.name] = typeof val === 'string' ? val : '';
+          }
+        } else if (f.type === 'tags') {
+          data[f.name] = Array.isArray(val)
+            ? val
+            : typeof val === 'string' && val
             ? val.split(',').map((s) => s.trim()).filter(Boolean)
             : [];
-      } else {
-        data[f.name] = typeof val === 'string' ? val : '';
+        } else {
+          data[f.name] = typeof val === 'string' ? val : '';
+        }
       }
-    });
-    if (view === 'edit' && editingRecord) {
-      updateRecord(editingRecord.id, data as Partial<AnyRecord>);
-    } else {
-      addRecord(data as Omit<AnyRecord, 'id'|'category'|'createdAt'|'updatedAt'>);
+      if (view === 'edit' && editingRecord) {
+        await updateRecord(editingRecord.id, data as Partial<AnyRecord>);
+      } else {
+        await addRecord(data as Omit<AnyRecord, 'id'|'category'|'createdAt'|'updatedAt'>);
+      }
+      resetView();
+    } catch (e: any) {
+      console.error('保存失败：', e);
+      // 显示具体错误信息（图片上传失败/标题为空等）
+      const msg = e?.message || '保存失败，请重试';
+      alert(msg);
+      setUploading(false);
     }
-    resetView();
-  }, [category.fields, formData, view, editingRecord, updateRecord, addRecord, resetView]);
+  }, [category, formData, view, editingRecord, updateRecord, addRecord, resetView]);
 
   const handleDelete = (id: string) => { deleteRecord(id); if (view==='detail' && editingRecord?.id===id) resetView(); };
 
@@ -373,51 +439,107 @@ const ThemedCard = ({ category, isOpen, onClose, canEdit = true }: ThemedCardPro
                   {/* ---------- 列表视图 ---------- */}
                   {view === 'list' && (
                     <motion.div key="list" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
-                      {/* 表头 - 只保留统计数 */}
-                      <div className="flex justify-end pb-3 mb-4"
+                      {/* 表头 - 统计数 + 同步状态 */}
+                      <div className="flex justify-between items-center pb-3 mb-4"
                         style={{ borderBottom: `1.5px dashed ${MILKI_STROKE}`, opacity: 0.7 }}>
+                        {syncing ? (
+                          <div className="flex items-center gap-2">
+                            <span className="inline-block w-3 h-3 rounded-full border-2 animate-spin"
+                              style={{ borderColor: t.accent, borderTopColor: 'transparent' }} />
+                            <span className="text-xs font-semibold" style={{ color: t.titleText, fontFamily: FONT_DISPLAY, letterSpacing: '0.4px' }}>
+                              同步中…
+                            </span>
+                          </div>
+                        ) : cloudError ? (
+                          <span className="text-[11px] font-semibold" style={{ color: MILKI_RED, fontFamily: FONT_DISPLAY }}
+                            title={cloudError}>
+                            ⚠ 云端同步失败
+                          </span>
+                        ) : <span />}
                         <span className="text-xs font-semibold" style={{ color: t.subText, fontFamily: FONT_DISPLAY, letterSpacing: '0.5px' }}>
-                          共 {records.length} 条
+                          {`共 ${records.length} 条`}
                         </span>
                       </div>
 
-                      {/* 添加按钮 - 仅管理员可见（访客隐藏） */}
-                      {canEdit && (
-                        <button type="button" onClick={() => { setView('add'); setEditingRecord(null); }}
-                          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 mb-5 text-sm font-bold transition-all hover:scale-[1.01] active:scale-[0.99]"
-                          style={{
-                            backgroundColor: MILKI_BEIGE,
-                            color: MILKI_STROKE,
-                            border: `2px solid ${MILKI_STROKE}`,
-                            borderRadius: '12px',
-                            boxShadow: '0 3px 0 #c8b494, 0 5px 12px rgba(74,62,53,0.14)',
-                            letterSpacing: '1px',
-                            fontFamily: FONT_DISPLAY,
-                          }}>
-                          <span className="text-lg">＋</span> 添加新记录
-                        </button>
+                      {/* 云端同步失败提示（本地数据仍可用） */}
+                      {cloudError && records.length === 0 && (
+                        <div className="mb-4 px-3 py-2 rounded-lg text-[11px]"
+                          style={{ background: '#fff1ef', color: MILKI_RED, border: `1.5px solid #e3a599` }}>
+                          ⚠ 云端读取失败：{cloudError}<br/>
+                          <span style={{ opacity: 0.8 }}>本地暂无缓存数据，请检查网络后刷新重试</span>
+                        </div>
                       )}
 
-                      {records.length === 0 ? (
-                        <div className="text-center py-12 flex flex-col items-center gap-2">
-                          <div className="text-4xl opacity-50">{category.icon}</div>
-                          <p className="text-sm mt-2" style={{ color: t.subText, opacity: 0.75, fontFamily: FONT_BODY }}>
-                            {canEdit ? category.emptyHint : '这里还没有记录～'}
-                          </p>
-                          {canEdit && (
-                            <div className="mt-2 px-3 py-1 rounded-full text-[11px]"
-                              style={{
-                                backgroundColor: t.accentBg,
-                                color: t.subText,
-                                border: `1.5px dashed ${MILKI_STROKE}`,
-                                opacity: 0.7,
-                                fontFamily: FONT_DISPLAY,
-                              }}>
-                              点击上方按钮添加 ✨
+                      {/* 首次加载占位（仅当云端同步中且本地无缓存时） */}
+                      {syncing && records.length === 0 ? (
+                        <div className="flex flex-col items-center gap-4 py-14">
+                          <div className="relative w-16 h-16">
+                            <div className="absolute inset-0 rounded-full border-4"
+                              style={{ borderColor: t.accentBg }} />
+                            <div className="absolute inset-0 rounded-full border-4 animate-spin"
+                              style={{ borderColor: t.accent, borderTopColor: 'transparent', borderRightColor: 'transparent' }} />
+                            <div className="absolute inset-0 flex items-center justify-center text-2xl">
+                              {category.icon}
+                            </div>
+                          </div>
+                          <div className="text-center space-y-1">
+                            <p className="text-sm font-bold" style={{ color: t.titleText, fontFamily: FONT_DISPLAY, letterSpacing: '0.5px' }}>
+                              正在从云端加载 {category.label}…
+                            </p>
+                          </div>
+                          {/* 骨架屏动画 */}
+                          {isGridView ? (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 w-full mt-2">
+                              {[0,1,2,3,4,5].map(i => (
+                                <div key={i} className="rounded-xl animate-pulse" style={{ aspectRatio: '3/4', backgroundColor: t.accentBg }} />
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="w-full space-y-3 mt-2">
+                              {[0,1,2,3].map(i => (
+                                <div key={i} className="h-14 rounded-xl animate-pulse" style={{ backgroundColor: t.accentBg }} />
+                              ))}
                             </div>
                           )}
                         </div>
-                      ) : isGridView ? (
+                      ) : (<>
+                        {/* 添加按钮 - 仅管理员可见（访客隐藏） */}
+                        {canEdit && (
+                          <button type="button" onClick={() => { setView('add'); setEditingRecord(null); }}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 mb-5 text-sm font-bold transition-all hover:scale-[1.01] active:scale-[0.99]"
+                            style={{
+                              backgroundColor: MILKI_BEIGE,
+                              color: MILKI_STROKE,
+                              border: `2px solid ${MILKI_STROKE}`,
+                              borderRadius: '12px',
+                              boxShadow: '0 3px 0 #c8b494, 0 5px 12px rgba(74,62,53,0.14)',
+                              letterSpacing: '1px',
+                              fontFamily: FONT_DISPLAY,
+                            }}>
+                            <span className="text-lg">＋</span> 添加新记录
+                          </button>
+                        )}
+
+                        {records.length === 0 ? (
+                          <div className="text-center py-12 flex flex-col items-center gap-2">
+                            <div className="text-4xl opacity-50">{category.icon}</div>
+                            <p className="text-sm mt-2" style={{ color: t.subText, opacity: 0.75, fontFamily: FONT_BODY }}>
+                              {canEdit ? category.emptyHint : '这里还没有记录～'}
+                            </p>
+                            {canEdit && (
+                              <div className="mt-2 px-3 py-1 rounded-full text-[11px]"
+                                style={{
+                                  backgroundColor: t.accentBg,
+                                  color: t.subText,
+                                  border: `1.5px dashed ${MILKI_STROKE}`,
+                                  opacity: 0.7,
+                                  fontFamily: FONT_DISPLAY,
+                                }}>
+                                点击上方按钮添加 ✨
+                              </div>
+                            )}
+                          </div>
+                        ) : isGridView ? (
                         /* ===== ★ 网格布局：专辑/电影/书架 使用九宫格书架形式 ===== */
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                           {records.map((r, i) => (
@@ -561,6 +683,7 @@ const ThemedCard = ({ category, isOpen, onClose, canEdit = true }: ThemedCardPro
                           ))}
                         </div>
                       )}
+                    </>)}
                     </motion.div>
                   )}
 
@@ -588,10 +711,10 @@ const ThemedCard = ({ category, isOpen, onClose, canEdit = true }: ThemedCardPro
                             <label className="text-xs font-semibold" style={{ color: t.text, opacity: 0.8, fontFamily: FONT_DISPLAY, letterSpacing: '0.3px' }}>
                               {field.label}
                             </label>
-                            {/* ★ 修复：onChange直接写入React状态（不再用隐藏DOM中转） */}
                             <ImageUpload
                               value={displayVal}
                               onChange={(v) => updateFormField(field.name, v)}
+                              onFileChange={(file) => handleFileChange(field.name, file)}
                             />
                           </div>
                         );
@@ -644,9 +767,8 @@ const ThemedCard = ({ category, isOpen, onClose, canEdit = true }: ThemedCardPro
 
                       {/* 保存 + 取消 */}
                       <div className="flex gap-3 mt-2">
-                        {/* ★ 修复：保存按钮直接读取React状态（不再遍历DOM） */}
-                        <button type="button" onClick={handleSave}
-                          className="flex-1 py-2.5 text-sm font-bold transition-all hover:scale-[1.01] active:scale-[0.99]"
+                        <button type="button" onClick={() => { void handleSave(); }} disabled={uploading}
+                          className="flex-1 py-2.5 text-sm font-bold transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
                           style={{
                             backgroundColor: MILKI_BEIGE,
                             color: MILKI_STROKE,
@@ -656,7 +778,7 @@ const ThemedCard = ({ category, isOpen, onClose, canEdit = true }: ThemedCardPro
                             letterSpacing: '1px',
                             fontFamily: FONT_DISPLAY,
                           }}>
-                          保存 ✓
+                          {uploading ? '上传中…' : '保存 ✓'}
                         </button>
                         <button type="button" onClick={resetView}
                           className="px-5 py-2.5 text-sm font-semibold transition-all hover:scale-[1.01] active:scale-[0.99]"
