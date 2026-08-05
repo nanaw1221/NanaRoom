@@ -25,7 +25,7 @@ interface HotspotProps {
 const CANVAS_W = 1501;
 const CANVAS_H = 1048;
 
-const SHOW_DEBUG_BOX = true;    // 临时打开：让用户看到所有热点精确位置和名字，点对就出数据
+const SHOW_DEBUG_BOX = false;
 
 const DEBUG_COLORS: Record<string, string> = {
   bookshelf: '#ff4d8a',
