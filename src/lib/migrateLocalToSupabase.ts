@@ -137,18 +137,25 @@ export async function runLocalToSupabaseMigration(): Promise<{
 
     const rows: Record<string, any>[] = [];
     for (const r of list) {
-      // AnyRecord 里所有子类的图片字段都是 image?（不是 imageUrl）
+      // AnyRecord 里所有子类的图片字段：支持 images 数组（多图）和 image 单图
       const anyR = r as any;
-      let url: string | null = anyR.image ?? anyR.imageUrl ?? null;
-      if (url && url.startsWith('data:image/')) {
-        const newUrl = await uploadBase64ToStorage(cat, url);
-        if (newUrl && newUrl !== url) photosUploaded++;
-        url = newUrl;  // 可能是 Storage URL 或 null（上传失败时不写 base64 入库）
-      }
+      const imgs: string[] = Array.isArray(anyR.images) ? anyR.images : (anyR.image ? [anyR.image] : []);
+      // 过滤掉 base64，只保留 URL
+      const safeImgs = imgs.filter((u: string) => u && !u.startsWith('data:'));
+      let url: string | null = safeImgs[0] ?? null;
 
-      // 把每分类的 扩展字段 + 通用字段 都落到 Supabase 的列：
-      //   title / description(=review) / date(=readDate/watchDate/...) / image_url
-      //   其余字段（author / artist / location / content / rating 等）统一丢到 extra JSONB
+      // 处理 base64 图片
+      for (const img of imgs) {
+        if (img.startsWith('data:image/')) {
+          const newUrl = await uploadBase64ToStorage(cat, img);
+          if (newUrl) {
+            safeImgs.push(newUrl);
+            photosUploaded++;
+          }
+        }
+      }
+      if (!url && safeImgs.length > 0) url = safeImgs[0];
+
       const {
         id: _id,
         category: _cat,
@@ -168,6 +175,8 @@ export async function runLocalToSupabaseMigration(): Promise<{
         artist,
         location,
         content,
+        director,
+        images: _imgs,
         ...extraRest
       } = anyR;
 
@@ -179,6 +188,8 @@ export async function runLocalToSupabaseMigration(): Promise<{
       if (artist)   extraMerged.artist   = artist;
       if (location) extraMerged.location = location;
       if (rating)   extraMerged.rating   = rating;
+      if (director) extraMerged.director = director;
+      if (safeImgs.length > 0) extraMerged.images = safeImgs;
 
       rows.push({
         category: cat,

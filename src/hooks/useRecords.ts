@@ -109,6 +109,15 @@ function fileToBase64(file: File): Promise<string> {
  * ============================================================ */
 function mapCloudRowToLocal<T extends AnyRecord>(row: any): T {
   const extra = row.extra && typeof row.extra === 'object' ? row.extra : {};
+  // 向后兼容：旧数据用 image_url（单图），新数据用 extra.images（数组）
+  const rawImages = extra.images;
+  const legacyImg = row.image_url ?? extra.image ?? undefined;
+  let images: string[] | undefined;
+  if (Array.isArray(rawImages) && rawImages.length > 0) {
+    images = rawImages as string[];
+  } else if (legacyImg && typeof legacyImg === 'string' && !legacyImg.startsWith('data:')) {
+    images = [legacyImg];
+  }
   return {
     id: String(row.id),
     category: row.category,
@@ -121,12 +130,14 @@ function mapCloudRowToLocal<T extends AnyRecord>(row: any): T {
     tags: Array.isArray(row.tags) ? (row.tags as string[]) : (extra.tags ?? []),
     createdAt: row.created_at ?? new Date().toISOString(),
     updatedAt: row.updated_at ?? row.created_at ?? new Date().toISOString(),
-    image: row.image_url ?? extra.image ?? undefined,
+    image: images?.[0] ?? legacyImg ?? undefined,
+    images: images,
     author: extra.author ?? undefined,
     artist: extra.artist ?? undefined,
     location: extra.location ?? undefined,
     readDate: extra.readDate ?? undefined,
     watchDate: extra.watchDate ?? undefined,
+    director: extra.director ?? undefined,
     ...extra,
   } as unknown as T;
 }
@@ -135,11 +146,10 @@ function mapCloudRowToLocal<T extends AnyRecord>(row: any): T {
  *  本地记录 → 云端 payload
  * ============================================================ */
 function buildCloudPayload(record: any, category: RecordCategory): Record<string, any> {
-  const img = record.image ?? record.imageUrl ?? null;
-  // ★ 关键修复：如果图片是 base64，不写入数据库（应为 Storage URL 或 null）
-  const safeImageUrl = img && typeof img === 'string' && img.startsWith('data:')
-    ? null  // base64 不入库，留 null
-    : img ?? null;
+  const imgs: string[] = Array.isArray(record.images) ? record.images : (record.image ? [record.image] : []);
+  // ★ 关键修复：过滤掉 base64（不应写入数据库）
+  const safeImages = imgs.filter((img: string) => img && !img.startsWith('data:'));
+  const firstImage = safeImages[0] ?? null;
 
   const finalDesc = record.description ?? record.review ?? record.content ?? null;
   const finalDate = record.date ?? record.readDate ?? record.watchDate ?? null;
@@ -148,7 +158,7 @@ function buildCloudPayload(record: any, category: RecordCategory): Record<string
   const columnKeys = new Set([
     'id', 'category', 'createdAt', 'updatedAt',
     'image', 'imageUrl', 'title', 'description', 'review', 'content',
-    'date', 'readDate', 'watchDate', 'tags', 'rating',
+    'date', 'readDate', 'watchDate', 'tags', 'rating', 'images',
   ]);
   const extra: Record<string, any> = {};
   for (const k of Object.keys(record)) {
@@ -160,12 +170,14 @@ function buildCloudPayload(record: any, category: RecordCategory): Record<string
   if (record.author)   extra.author   = record.author;
   if (record.artist)   extra.artist   = record.artist;
   if (record.location) extra.location = record.location;
+  if (record.director) extra.director = record.director;
+  if (safeImages.length > 0) extra.images = safeImages;
 
   return {
     category,
     title: record.title ?? null,
     description: finalDesc,
-    image_url: safeImageUrl,
+    image_url: firstImage,
     rating: typeof record.rating === 'number' ? record.rating : null,
     date: finalDate,
     tags: Array.isArray(record.tags) ? record.tags : [],
@@ -287,14 +299,24 @@ export function useRecords<T extends AnyRecord>(category: RecordCategory) {
         const imageUrl = (data as any).image_url ?? undefined;
         const extra = (data as any).extra && typeof (data as any).extra === 'object' ? (data as any).extra : {};
 
+        // 向后兼容：旧单图 → 新数组
+        const extraImages = extra.images;
+        let images: string[] | undefined;
+        if (Array.isArray(extraImages) && extraImages.length > 0) {
+          images = extraImages;
+        } else if (imageUrl && !imageUrl.startsWith('data:')) {
+          images = [imageUrl];
+        }
+        const firstImg = images?.[0] ?? imageUrl ?? undefined;
+
         setRecords((prev) => {
           const next = prev.map((r) => {
             if (r.id === id) {
-              const existingImg = (r as any).image;
               return {
                 ...r,
-                image: imageUrl ?? existingImg ?? (extra as any)?.image ?? undefined,
-                ...(extra as any),
+                image: firstImg ?? (r as any).image,
+                images: images ?? (r as any).images,
+                ...extra,
               } as T;
             }
             return r;
@@ -327,9 +349,9 @@ export function useRecords<T extends AnyRecord>(category: RecordCategory) {
         updatedAt: now,
       } as T;
 
-      // 1. 立即写本地（真相源）
+      // 1. 立即写本地（真相源）—— 新增记录追加到末尾
       setRecords((prev) => {
-        const next = [optimistic, ...prev];
+        const next = [...prev, optimistic];
         saveLocal(category, next);
         return next;
       });

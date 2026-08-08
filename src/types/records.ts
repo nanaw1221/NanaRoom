@@ -18,14 +18,17 @@ export interface BookRecord extends BaseRecord {
   author: string;
   readDate: string;
   review: string;
+  images?: string[];
   image?: string;
 }
 
 export interface MovieRecord extends BaseRecord {
   category: 'movies';
   title: string;
+  director: string;
   watchDate: string;
   review: string;
+  images?: string[];
   image?: string;
 }
 
@@ -43,6 +46,7 @@ export interface AlbumRecord extends BaseRecord {
   title: string;
   artist: string;
   review: string;
+  images?: string[];
   image?: string;
 }
 
@@ -91,7 +95,7 @@ export interface CategoryDef {
 export const categoryDefs: CategoryDef[] = [
   {
     key: 'books',
-    label: '读书记录',
+    label: '书',
     icon: '📚',
     hotspotLabel: '书架',
     fields: [
@@ -105,11 +109,12 @@ export const categoryDefs: CategoryDef[] = [
   },
   {
     key: 'movies',
-    label: '观影记录',
+    label: '电影',
     icon: '🎬',
     hotspotLabel: '投影仪',
     fields: [
       { name: 'title', label: '电影名称', type: 'text', placeholder: '输入电影名' },
+      { name: 'director', label: '导演', type: 'text', placeholder: '输入导演' },
       { name: 'watchDate', label: '观看时间', type: 'date' },
       { name: 'image', label: '电影海报', type: 'image' },
       { name: 'review', label: '观后感', type: 'textarea', placeholder: '写下你的观后感...' },
@@ -118,7 +123,7 @@ export const categoryDefs: CategoryDef[] = [
   },
   {
     key: 'notes',
-    label: '写下的',
+    label: '小记',
     icon: '📓',
     hotspotLabel: '笔记本',
     fields: [

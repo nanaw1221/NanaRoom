@@ -124,7 +124,7 @@ function getTitle(r: AnyRecord): string {
   switch(r.category){ case 'books':return r.title||'未命名'; case 'movies':return r.title||'未命名'; case 'notes':return r.title||'无标题'; case 'albums':return r.title||'未命名'; case 'travel':return r.title||'未命名'; case 'concerts':return r.artist||'未命名'; default:return '未命名'; }
 }
 function getSubtitle(r: AnyRecord): string {
-  switch(r.category){ case 'books':return r.author||''; case 'movies':return formatDate(r.watchDate); case 'notes':return formatDate(r.date); case 'albums':return r.artist||''; case 'travel':return `${r.location||''} ${formatDate(r.date)}`; case 'concerts':return `${r.location||''} ${formatDate(r.date)}`; default:return ''; }
+  switch(r.category){ case 'books':return r.author||''; case 'movies':return r.director ? `导演·${r.director}` : formatDate(r.watchDate); case 'notes':return formatDate(r.date); case 'albums':return r.artist||''; case 'travel':return `${r.location||''} ${formatDate(r.date)}`; case 'concerts':return `${r.location||''} ${formatDate(r.date)}`; default:return ''; }
 }
 
 // 判断是否使用网格布局的分类：专辑、电影、书架
@@ -135,68 +135,151 @@ function useGridView(categoryKey: string): boolean {
 
 
 
-/* ===== Image Upload (Milki 票据风) ===== */
-const ImageUpload = ({ value, onChange, onFileChange }: {
+/* ===== Image Upload (Milki 票据风 · 支持多张图片) ===== */
+const ImageUpload = ({ value, onChange, onFileChange, maxImages = 1 }: {
   value: string;
   onChange: (v: string) => void;
   onFileChange?: (file: File | null) => void;
+  maxImages?: number;
 }) => {
   const fileRef = useRef<HTMLInputElement>(null);
-  // 内部维护预览状态，实现即时UI反馈
-  const [preview, setPreview] = useState<string>(value);
   const fileStoreRef = useRef<File | null>(null);
 
-  // 当外部value变化时（比如加载编辑数据），同步更新预览
+  // 单图模式：value 是字符串
+  // 多图模式：通过 internalImages 管理
+  const isMulti = maxImages > 1;
+  const [internalImages, setInternalImages] = useState<string[]>(() => {
+    if (!isMulti) return [];
+    const v = value as string;
+    return v ? [v] : [];
+  });
+  const [singlePreview, setSinglePreview] = useState<string>(value);
+
+  // 同步外部 value 变化
   useEffect(() => {
-    setPreview(value);
-  }, [value]);
+    if (!isMulti) {
+      setSinglePreview(value);
+    }
+  }, [value, isMulti]);
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
     // 文件类型校验
-    if (!file.type.startsWith('image/')) {
-      alert('只能上传图片文件');
-      return;
+    for (const file of files) {
+      if (!file.type.startsWith('image/')) {
+        alert('只能上传图片文件');
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        alert('图片大小不能超过 5MB');
+        return;
+      }
     }
-    if (file.size > 5 * 1024 * 1024) {
-      alert('图片大小不能超过 5MB');
-      return;
+
+    if (isMulti) {
+      // 多图模式：追加到现有列表，最多 maxImages 张
+      const remaining = maxImages - internalImages.length;
+      const toAdd = files.slice(0, remaining);
+      if (toAdd.length === 0) {
+        alert(`最多上传 ${maxImages} 张图片`);
+        e.target.value = '';
+        return;
+      }
+
+      Promise.all(toAdd.map((f) => fileToDataUrl(f)))
+        .then((dataUrls) => {
+          const newImages = [...internalImages, ...dataUrls];
+          setInternalImages(newImages);
+          // 多图模式下 onChange 传递逗号分隔的 URL 列表
+          onChange(newImages.join('|||'));
+        });
+
+      // 存储最后一个文件供保存时上传
+      if (toAdd.length > 0) {
+        fileStoreRef.current = toAdd[toAdd.length - 1];
+        onFileChange?.(toAdd[toAdd.length - 1]);
+      }
+    } else {
+      // 单图模式
+      const file = files[0];
+      fileStoreRef.current = file;
+      onFileChange?.(file);
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        setSinglePreview(result);
+        onChange(result);
+      };
+      reader.onerror = () => alert('图片读取失败，请重试');
+      reader.readAsDataURL(file);
     }
-    fileStoreRef.current = file;
-    onFileChange?.(file);
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      setPreview(result);
-      onChange(result);
-    };
-    reader.onerror = () => {
-      alert('图片读取失败，请重试');
-    };
-    reader.readAsDataURL(file);
-    // 清空input value，允许再次选择同一文件
     e.target.value = '';
   };
 
-  const handleRemove = () => {
-    fileStoreRef.current = null;
-    onFileChange?.(null);
-    setPreview('');
-    onChange('');
+  const fileToDataUrl = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
   };
+
+  const handleRemoveImage = (index: number) => {
+    if (isMulti) {
+      const newImages = internalImages.filter((_, i) => i !== index);
+      setInternalImages(newImages);
+      onChange(newImages.join('|||'));
+    } else {
+      fileStoreRef.current = null;
+      onFileChange?.(null);
+      setSinglePreview('');
+      onChange('');
+    }
+  };
+
+  const canAddMore = isMulti && internalImages.length < maxImages;
 
   return (
     <div>
-      {preview ? (
-        <div className="relative inline-block group">
-          <img src={preview} alt="上传预览" className="w-24 h-24 object-cover"
+      {/* 多图预览网格 */}
+      {isMulti && internalImages.length > 0 && (
+        <div className="flex gap-2 flex-wrap mb-2">
+          {internalImages.map((src, idx) => (
+            <div key={idx} className="relative inline-block group">
+              <img src={src} alt="" className="w-20 h-20 object-cover"
+                style={{
+                  borderRadius: '10px',
+                  border: `2.5px solid ${MILKI_STROKE}`,
+                  boxShadow: '0 2px 0 #b8a588',
+                }} />
+              <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[9px] font-bold px-1.5 py-0.5 rounded"
+                style={{ background: MILKI_STROKE, color: '#fff' }}>
+                {idx === 0 ? '封面' : `${idx + 1}`}
+              </span>
+              <button type="button" onClick={() => handleRemoveImage(idx)}
+                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white opacity-0 group-hover:opacity-100 transition-all hover:scale-110"
+                style={{
+                  backgroundColor: MILKI_RED,
+                  border: `2px solid ${MILKI_STROKE}`,
+                }}>×</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 单图预览 */}
+      {!isMulti && singlePreview && (
+        <div className="relative inline-block group mb-2">
+          <img src={singlePreview} alt="上传预览" className="w-24 h-24 object-cover"
             style={{
               borderRadius: '12px',
               border: `3px solid ${MILKI_STROKE}`,
               boxShadow: '0 3px 0 #b8a588, 0 4px 10px rgba(74,62,53,0.18)',
             }} />
-          <button type="button" onClick={handleRemove}
+          <button type="button" onClick={() => handleRemoveImage(0)}
             className="absolute -top-2 -right-2 w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold text-white opacity-0 group-hover:opacity-100 transition-all hover:scale-110"
             style={{
               backgroundColor: MILKI_RED,
@@ -205,7 +288,10 @@ const ImageUpload = ({ value, onChange, onFileChange }: {
               textShadow: '0 1px 0 rgba(0,0,0,0.3)',
             }}>×</button>
         </div>
-      ) : (
+      )}
+
+      {/* 上传按钮 */}
+      {(isMulti ? canAddMore : true) && (
         <button type="button" onClick={() => fileRef.current?.click()}
           className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold transition-all hover:scale-[1.01] active:scale-[0.99]"
           style={{
@@ -217,10 +303,11 @@ const ImageUpload = ({ value, onChange, onFileChange }: {
             fontFamily: FONT_DISPLAY,
             letterSpacing: '0.3px',
           }}>
-          <span className="text-lg">📷</span> 点击上传图片
+          <span className="text-lg">📷</span>
+          {isMulti ? `上传图片 (${internalImages.length}/${maxImages})` : '点击上传图片'}
         </button>
       )}
-      <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} className="hidden" />
+      <input ref={fileRef} type="file" accept="image/*" multiple={isMulti} onChange={handleFile} className="hidden" />
     </div>
   );
 };
@@ -234,14 +321,25 @@ const ThemedCard = ({ category, isOpen, onClose, canEdit = true }: ThemedCardPro
   const t = receiptThemes[category.key] || receiptThemes.notes;
   const isGridView = useGridView(category.key);
   const pendingFilesRef = useRef<Map<string, File>>(new Map());
+  const isMultiImageCategory = category.key === 'movies' || category.key === 'books' || category.key === 'albums';
+  const MAX_IMAGES = 3;
   const [uploading, setUploading] = useState(false);
   const loadedImagesRef = useRef<Set<string>>(new Set());
+
+  const isMulti = isMultiImageCategory;
+  const getDisplayImage = (r: AnyRecord): string | undefined => {
+    if (isMulti) {
+      const imgs = (r as any).images;
+      if (Array.isArray(imgs) && imgs.length > 0) return imgs[0];
+    }
+    return (r as AnyRecord).image;
+  };
 
   /* 懒加载：为没有图片的记录逐个加载图片（仅在卡片打开时） */
   useEffect(() => {
     if (!isOpen) return;
     const recordsNeedingImages = records.filter(
-      (r) => !(r as AnyRecord).image && !loadedImagesRef.current.has(r.id)
+      (r) => !getDisplayImage(r) && !loadedImagesRef.current.has(r.id)
     );
     if (recordsNeedingImages.length === 0) return;
 
@@ -282,7 +380,7 @@ const ThemedCard = ({ category, isOpen, onClose, canEdit = true }: ThemedCardPro
 
   /* 详情视图：懒加载图片 */
   useEffect(() => {
-    if (view === 'detail' && editingRecord && !(editingRecord as AnyRecord).image) {
+    if (view === 'detail' && editingRecord && !getDisplayImage(editingRecord)) {
       loadedImagesRef.current.add(editingRecord.id);
       loadRecordDetails(editingRecord.id);
     }
@@ -316,12 +414,22 @@ const ThemedCard = ({ category, isOpen, onClose, canEdit = true }: ThemedCardPro
         if (f.type === 'image') {
           const pendingFile = pendingFilesRef.current.get(f.name);
           if (pendingFile) {
-            // uploadRecordImage 在云端模式下会 throw（不再静默降级 base64）
             const url = await uploadRecordImage(pendingFile, { category: category.key });
             data[f.name] = url;
             pendingFilesRef.current.delete(f.name);
           } else {
-            data[f.name] = typeof val === 'string' ? val : '';
+            // 多图模式：解析 ||| 分隔的 URL 列表
+            if (isMultiImageCategory && typeof val === 'string') {
+              const urls = val.split('|||').filter(Boolean);
+              if (urls.length > 0) {
+                data[f.name] = urls[0]; // 第一张作为 image
+                (data as any).images = urls; // 全部存入 images
+              } else {
+                data[f.name] = '';
+              }
+            } else {
+              data[f.name] = typeof val === 'string' ? val : '';
+            }
           }
         } else if (f.type === 'tags') {
           data[f.name] = Array.isArray(val)
@@ -341,12 +449,11 @@ const ThemedCard = ({ category, isOpen, onClose, canEdit = true }: ThemedCardPro
       resetView();
     } catch (e: any) {
       console.error('保存失败：', e);
-      // 显示具体错误信息（图片上传失败/标题为空等）
       const msg = e?.message || '保存失败，请重试';
       alert(msg);
       setUploading(false);
     }
-  }, [category, formData, view, editingRecord, updateRecord, addRecord, resetView]);
+  }, [category, formData, view, editingRecord, updateRecord, addRecord, resetView, isMultiImageCategory]);
 
   const handleDelete = (id: string) => { deleteRecord(id); if (view==='detail' && editingRecord?.id===id) resetView(); };
 
@@ -560,8 +667,8 @@ const ThemedCard = ({ category, isOpen, onClose, canEdit = true }: ThemedCardPro
                                   backgroundColor: t.accentBg,
                                   borderBottom: `2px solid ${MILKI_STROKE}`,
                                 }}>
-                                {(r as AnyRecord).image ? (
-                                  <img src={(r as AnyRecord).image} alt={getTitle(r)}
+                                {getDisplayImage(r) ? (
+                                  <img src={getDisplayImage(r)} alt={getTitle(r)}
                                     className="w-full h-full object-cover"
                                     loading="lazy" draggable={false} />
                                 ) : (
@@ -650,8 +757,8 @@ const ThemedCard = ({ category, isOpen, onClose, canEdit = true }: ThemedCardPro
                                 {i+1}
                               </div>
 
-                              {(r as AnyRecord).image && (
-                                <img src={(r as AnyRecord).image} alt="" className="w-11 h-11 object-cover shrink-0"
+                              {getDisplayImage(r) && (
+                                <img src={getDisplayImage(r)} alt="" className="w-11 h-11 object-cover shrink-0"
                                   style={{ borderRadius: '9px', border: `2px solid ${MILKI_STROKE}` }} />
                               )}
                               <div className="flex-1 min-w-0">
@@ -709,12 +816,13 @@ const ThemedCard = ({ category, isOpen, onClose, canEdit = true }: ThemedCardPro
                         if (field.type === 'image') return (
                           <div key={field.name} className="flex flex-col gap-2">
                             <label className="text-xs font-semibold" style={{ color: t.text, opacity: 0.8, fontFamily: FONT_DISPLAY, letterSpacing: '0.3px' }}>
-                              {field.label}
+                              {field.label}{isMultiImageCategory ? '（最多3张）' : ''}
                             </label>
                             <ImageUpload
                               value={displayVal}
                               onChange={(v) => updateFormField(field.name, v)}
                               onFileChange={(file) => handleFileChange(field.name, file)}
+                              maxImages={isMultiImageCategory ? MAX_IMAGES : 1}
                             />
                           </div>
                         );
@@ -817,8 +925,29 @@ const ThemedCard = ({ category, isOpen, onClose, canEdit = true }: ThemedCardPro
                         返回清单
                       </button>
 
-                      {/* 图片 */}
-                      {(editingRecord as AnyRecord).image && (
+                      {/* 图片（多图分类显示所有图片，单图分类显示一张） */}
+                      {isMultiImageCategory ? (
+                        <div className="flex gap-3 flex-wrap mb-5">
+                          {(editingRecord as any).images?.length
+                            ? (editingRecord as any).images.map((img: string, idx: number) => (
+                              <img key={idx} src={img} alt="" className="w-28 h-28 object-cover"
+                                style={{
+                                  borderRadius: '14px',
+                                  border: `3px solid ${MILKI_STROKE}`,
+                                  boxShadow: '0 4px 0 #c8b494, 0 6px 16px rgba(74,62,53,0.18)',
+                                }} />
+                            ))
+                            : (editingRecord as AnyRecord).image && (
+                              <img src={(editingRecord as AnyRecord).image} alt="" className="w-full max-h-56 object-cover"
+                                style={{
+                                  borderRadius: '14px',
+                                  border: `3px solid ${MILKI_STROKE}`,
+                                  boxShadow: '0 4px 0 #c8b494, 0 6px 16px rgba(74,62,53,0.18)',
+                                }} />
+                            )
+                          }
+                        </div>
+                      ) : (editingRecord as AnyRecord).image && (
                         <img src={(editingRecord as AnyRecord).image} alt="" className="w-full max-h-56 object-cover mb-5"
                           style={{
                             borderRadius: '14px',
