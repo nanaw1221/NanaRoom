@@ -34,7 +34,13 @@ function loadLocal<T extends AnyRecord>(category: RecordCategory): T[] {
     const raw = localStorage.getItem(storageKey(category));
     if (raw) {
       const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? (parsed as T[]) : [];
+      if (Array.isArray(parsed)) {
+        return (parsed as T[]).sort((a, b) => {
+          const ca = (a as any).createdAt ?? '';
+          const cb = (b as any).createdAt ?? '';
+          return ca.localeCompare(cb);
+        });
+      }
     }
     return [];
   } catch (e) {
@@ -220,7 +226,7 @@ export function useRecords<T extends AnyRecord>(category: RecordCategory) {
           .from('records')
           .select('id, category, title, description, rating, date, tags, extra, created_at, updated_at')
           .eq('category', category)
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: true });
 
         if (fetchReqIdRef.current !== reqId) return;
 
