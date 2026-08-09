@@ -28,6 +28,28 @@ function storageKey(category: RecordCategory): string {
   return `${STORAGE_PREFIX}${category}`;
 }
 
+function deletedKey(category: RecordCategory): string {
+  return `${STORAGE_PREFIX}${category}_deleted`;
+}
+
+/* ---------- 本地存储 helpers ---------- */
+function loadDeletedIds(category: RecordCategory): Set<string> {
+  try {
+    const raw = localStorage.getItem(deletedKey(category));
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return new Set(arr);
+    }
+  } catch {}
+  return new Set();
+}
+
+function saveDeletedIds(category: RecordCategory, ids: Set<string>): void {
+  try {
+    localStorage.setItem(deletedKey(category), JSON.stringify([...ids]));
+  } catch {}
+}
+
 /* ---------- 本地存储 helpers ---------- */
 function loadLocal<T extends AnyRecord>(category: RecordCategory): T[] {
   try {
@@ -205,6 +227,7 @@ export function useRecords<T extends AnyRecord>(category: RecordCategory) {
   // ref 防止 effect 间竞态
   const fetchReqIdRef = useRef<number>(0);
   const hasFetchedCloudRef = useRef<boolean>(false);
+  const deletedIdsRef = useRef<Set<string>>(loadDeletedIds(category));
 
   /* ---------- 云端拉取（仅一次：auth 就绪后触发） ---------- */
   useEffect(() => {
@@ -246,19 +269,23 @@ export function useRecords<T extends AnyRecord>(category: RecordCategory) {
 
         const cloud: T[] = data.map((row: any) => mapCloudRowToLocal<T>(row));
 
-        // 合并策略：云端为主，本地独有记录追加到末尾
+        // 合并策略：云端为主，过滤已删除ID，本地独有记录追加到末尾
         setRecords((prevLocal) => {
+          const deletedSet = deletedIdsRef.current;
           const localMap = new Map(prevLocal.map((r: any) => [String(r.id), r]));
           const cloudIds = new Set(cloud.map((r: any) => String(r.id)));
 
-          const merged: T[] = cloud.map((c: any) => {
+          // 过滤掉已删除的记录（即使 cloud 有，也不回加）
+          const filteredCloud = cloud.filter((c: any) => !deletedSet.has(String(c.id)));
+
+          const merged: T[] = filteredCloud.map((c: any) => {
             const l = localMap.get(String(c.id));
             return l ? { ...l, ...c } as T : c as T;
           });
 
-          const localOnly = prevLocal.filter((r: any) => !cloudIds.has(String(r.id)));
+          const localOnly = prevLocal.filter((r: any) => !cloudIds.has(String(r.id)) && !deletedSet.has(String(r.id)));
           if (localOnly.length > 0) {
-            console.log(`[useRecords:${category}] 合并云端 ${cloud.length} + 本地独有 ${localOnly.length} 条`);
+            console.log(`[useRecords:${category}] 合并云端 ${filteredCloud.length} + 本地独有 ${localOnly.length} 条`);
             merged.push(...localOnly);
           }
 
@@ -316,6 +343,9 @@ export function useRecords<T extends AnyRecord>(category: RecordCategory) {
         const firstImg = images?.[0] ?? imageUrl ?? undefined;
 
         setRecords((prev) => {
+          // 过滤掉已删除的记录（防止懒加载回加）
+          if (deletedIdsRef.current.has(id)) return prev;
+
           const next = prev.map((r) => {
             if (r.id === id) {
               return {
@@ -444,6 +474,12 @@ export function useRecords<T extends AnyRecord>(category: RecordCategory) {
   /* ---------- 删：deleteRecord ---------- */
   const deleteRecord = useCallback(
     async (id: string) => {
+      const numId = Number.isFinite(Number(id)) ? Number(id) : id;
+
+      // 0. 先标记为已删除（防止 cloud fetch 合并回加）
+      deletedIdsRef.current.add(String(id));
+      saveDeletedIds(category, deletedIdsRef.current);
+
       // 1. 立即删本地
       setRecords((prev) => {
         const next = prev.filter((r) => r.id !== id);
@@ -453,15 +489,22 @@ export function useRecords<T extends AnyRecord>(category: RecordCategory) {
 
       // 2. 云端删除（仅管理员）
       if (isConfigured && isAdmin && supabase) {
-        const numId = Number.isFinite(Number(id)) ? Number(id) : id;
         try {
           const { error } = await supabase
             .from('records')
             .delete()
             .eq('id', numId);
-          if (error) console.warn(`[useRecords:${category}] 云端删除失败:`, error.message);
+          if (error) {
+            console.error(`[useRecords:${category}] 云端删除失败 (id=${id}):`, error.message);
+            alert(`删除失败：${error.message}\n\n记录已在本地标记删除，但云端可能未同步。请确认 RLS 策略邮箱是否正确。`);
+          } else {
+            console.log(`[useRecords:${category}] 云端删除成功 (id=${id})`);
+            // 云端删除成功后，从 deletedIds 移除（已真正删除，无需追踪）
+            // 但保留也无妨，作为双保险
+          }
         } catch (e: any) {
-          console.warn(`[useRecords:${category}] 云端删除异常:`, e?.message);
+          console.error(`[useRecords:${category}] 云端删除异常 (id=${id}):`, e?.message);
+          alert(`删除异常：${e?.message ?? '未知错误'}\n\n记录已在本地标记删除。`);
         }
       }
     },
