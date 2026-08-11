@@ -596,7 +596,7 @@ const ThemedCard = ({ category, isOpen, onClose, canEdit = true }: ThemedCardPro
                           </div>
                           {/* 骨架屏动画 */}
                           {isGridView ? (
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 w-full mt-2">
+                            <div className="grid grid-cols-3 sm:grid-cols-5 gap-3 w-full mt-2">
                               {[0,1,2,3,4,5].map(i => (
                                 <div key={i} className="rounded-xl animate-pulse" style={{ aspectRatio: '3/4', backgroundColor: t.accentBg }} />
                               ))}
@@ -648,7 +648,7 @@ const ThemedCard = ({ category, isOpen, onClose, canEdit = true }: ThemedCardPro
                           </div>
                         ) : isGridView ? (
                         /* ===== ★ 网格布局：专辑/电影/书架 使用九宫格书架形式 ===== */
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
                           {records.map((r, i) => (
                             <motion.div key={r.id} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
                               transition={{ delay: i*0.03, duration: 0.2 }}
