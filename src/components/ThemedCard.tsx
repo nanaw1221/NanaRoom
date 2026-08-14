@@ -1,7 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import type { AnyRecord, CategoryDef } from '../types/records';
+import type { AnyRecord, CategoryDef, RecordCategory } from '../types/records';
 import { useRecords, uploadRecordImage } from '../hooks/useRecords';
+import { useCategoryIntros } from '../hooks/useCategoryIntros';
 
 interface ThemedCardProps {
   category: CategoryDef;
@@ -315,6 +316,7 @@ const ImageUpload = ({ value, onChange, onFileChange, maxImages = 1 }: {
 /* ===== 主组件：Milki Receipt 风格卡片 ===== */
 const ThemedCard = ({ category, isOpen, onClose, canEdit = true }: ThemedCardProps) => {
   const { records, syncing, cloudError, addRecord, updateRecord, deleteRecord, loadRecordDetails } = useRecords<AnyRecord>(category.key);
+  const { getIntro, saveIntro } = useCategoryIntros();
   const [view, setView] = useState<View>('list');
   const [editingRecord, setEditingRecord] = useState<AnyRecord | null>(null);
   const [formData, setFormData] = useState<Record<string, string | string[]>>({});
@@ -325,6 +327,41 @@ const ThemedCard = ({ category, isOpen, onClose, canEdit = true }: ThemedCardPro
   const MAX_IMAGES = 3;
   const [uploading, setUploading] = useState(false);
   const loadedImagesRef = useRef<Set<string>>(new Set());
+
+  // 介绍文字编辑状态
+  const [introDraft, setIntroDraft] = useState('');
+  const [isEditingIntro, setIsEditingIntro] = useState(false);
+  const introTextareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // 当卡片打开或分类变化时，加载介绍文字
+  useEffect(() => {
+    if (isOpen) {
+      const text = getIntro(category.key as RecordCategory);
+      setIntroDraft(text);
+      setIsEditingIntro(false);
+    }
+  }, [isOpen, category.key, getIntro]);
+
+  // 保存介绍文字
+  const handleSaveIntro = useCallback(async () => {
+    await saveIntro(category.key as RecordCategory, introDraft.trim());
+    setIsEditingIntro(false);
+  }, [category.key, introDraft, saveIntro]);
+
+  // 取消编辑介绍文字
+  const handleCancelIntro = useCallback(() => {
+    setIntroDraft(getIntro(category.key as RecordCategory));
+    setIsEditingIntro(false);
+  }, [category.key, getIntro]);
+
+  // 介绍文字快捷键
+  const handleIntroKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') handleCancelIntro();
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      void handleSaveIntro();
+    }
+  }, [handleCancelIntro, handleSaveIntro]);
 
   const isMulti = isMultiImageCategory;
   const getDisplayImage = (r: AnyRecord): string | undefined => {
@@ -530,6 +567,117 @@ const ThemedCard = ({ category, isOpen, onClose, canEdit = true }: ThemedCardPro
                     ✕
                   </button>
                 </div>
+              </div>
+
+              {/* ============== 介绍文字区域（标题下方） ============== */}
+              <div className="px-5 sm:px-6 py-3"
+                style={{
+                  backgroundColor: t.accentBg,
+                  borderBottom: `1.5px dashed ${MILKI_STROKE}`,
+                }}>
+                {isEditingIntro ? (
+                  <div>
+                    <textarea
+                      ref={introTextareaRef}
+                      value={introDraft}
+                      onChange={(e) => setIntroDraft(e.target.value)}
+                      onKeyDown={handleIntroKeyDown}
+                      placeholder="介绍一下这个区域吧..."
+                      className="w-full resize-none"
+                      style={{
+                        minHeight: '64px',
+                        padding: '10px 12px',
+                        border: `1.5px solid ${MILKI_STROKE}`,
+                        borderRadius: '10px',
+                        backgroundColor: MILKI_CREAM,
+                        color: t.text,
+                        fontSize: '13px',
+                        fontFamily: FONT_BODY,
+                        lineHeight: '1.5',
+                        outline: 'none',
+                        boxShadow: 'inset 0 2px 4px rgba(74,62,53,0.08)',
+                      }}
+                    />
+                    <div className="flex gap-2 mt-2 justify-end">
+                      <button
+                        onClick={handleCancelIntro}
+                        className="px-3 py-1 text-xs font-semibold transition-all hover:scale-[1.01] active:scale-[0.99]"
+                        style={{
+                          color: t.subText,
+                          backgroundColor: 'transparent',
+                          border: `1.5px solid ${MILKI_STROKE}`,
+                          borderRadius: '8px',
+                          fontFamily: FONT_DISPLAY,
+                        }}
+                      >
+                        取消
+                      </button>
+                      <button
+                        onClick={() => void handleSaveIntro()}
+                        className="px-3 py-1 text-xs font-bold transition-all hover:scale-[1.01] active:scale-[0.99]"
+                        style={{
+                          color: MILKI_CREAM,
+                          backgroundColor: MILKI_STROKE,
+                          border: `1.5px solid ${MILKI_STROKE}`,
+                          borderRadius: '8px',
+                          boxShadow: '0 2px 0 #3a2f28',
+                          fontFamily: FONT_DISPLAY,
+                        }}
+                      >
+                        保存
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    onClick={() => canEdit && setIsEditingIntro(true)}
+                    style={{
+                      cursor: canEdit ? 'pointer' : 'default',
+                      padding: '10px 12px',
+                      backgroundColor: MILKI_CREAM,
+                      borderRadius: '10px',
+                      border: `1.5px dashed ${MILKI_STROKE}`,
+                      minHeight: '40px',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (canEdit) {
+                        (e.currentTarget as HTMLDivElement).style.backgroundColor = '#FFFEF5';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLDivElement).style.backgroundColor = MILKI_CREAM;
+                    }}
+                  >
+                    {introDraft ? (
+                      <p style={{
+                        margin: 0,
+                        color: t.text,
+                        fontSize: '13px',
+                        fontFamily: FONT_BODY,
+                        lineHeight: '1.6',
+                        whiteSpace: 'pre-wrap',
+                      }}>
+                        {introDraft}
+                      </p>
+                    ) : canEdit ? (
+                      <p style={{
+                        margin: 0,
+                        color: t.subText,
+                        fontSize: '12px',
+                        fontFamily: FONT_DISPLAY,
+                        fontStyle: 'italic',
+                        opacity: 0.7,
+                      }}>
+                        ✎ 点击添加介绍...
+                      </p>
+                    ) : (
+                      <p style={{ margin: 0, color: t.subText, fontSize: '12px', opacity: 0.5 }}>
+                        暂无介绍
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* ============== 内容区 ============== */}

@@ -45,9 +45,35 @@ create policy "Admin can write records"
   with check (auth.jwt() ->> 'email' = 'lilisnuonuo@gmail.com');
 
 -- =================================================================
+--  category_intros 表（热点区域介绍文字）
+-- =================================================================
+-- 6. 创建 category_intros 表
+create table if not exists public.category_intros (
+  id          bigserial primary key,
+  category    text not null unique,
+  text        text default '',
+  updated_at  timestamptz not null default now()
+);
+
+-- 7. 打开行级安全（RLS）
+alter table public.category_intros enable row level security;
+
+-- 8. 读策略：任何人（含匿名访客）都能读
+drop policy if exists "Public can read category_intros" on public.category_intros;
+create policy "Public can read category_intros"
+  on public.category_intros for select using (true);
+
+-- 9. 写策略：只有管理员邮箱可以增/改/删
+drop policy if exists "Admin can write category_intros" on public.category_intros;
+create policy "Admin can write category_intros"
+  on public.category_intros for all
+  using     (auth.jwt() ->> 'email' = 'lilisnuonuo@gmail.com')
+  with check (auth.jwt() ->> 'email' = 'lilisnuonuo@gmail.com');
+
+-- =================================================================
 --  Storage 桶（存上传的图片）
 -- =================================================================
--- 6. 创建 record-images 桶（公开可读，5MB 限制）
+-- 10. 创建 record-images 桶（公开可读，5MB 限制）
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
   'record-images',
@@ -58,13 +84,13 @@ values (
 )
 on conflict (id) do nothing;
 
--- 7. Storage 读：匿名公开可读
+-- 11. Storage 读：匿名公开可读
 drop policy if exists "Public read record-images" on storage.objects;
 create policy "Public read record-images"
   on storage.objects for select
   using (bucket_id = 'record-images');
 
--- 8. Storage 写：只有管理员邮箱可以上传/删除
+-- 12. Storage 写：只有管理员邮箱可以上传/删除
 drop policy if exists "Admin write record-images" on storage.objects;
 create policy "Admin write record-images"
   on storage.objects for all
@@ -91,5 +117,5 @@ from storage.buckets where id = 'record-images';
 
 select 'policy' as type, policyname, cmd
 from pg_policies
-where tablename in ('records', 'objects')
+where tablename in ('records', 'category_intros', 'objects')
 order by tablename, policyname;
