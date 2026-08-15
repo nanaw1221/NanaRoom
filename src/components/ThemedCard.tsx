@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import type { AnyRecord, CategoryDef, RecordCategory } from '../types/records';
+import type { AnyRecord, CategoryDef, RecordCategory, NoteRecord } from '../types/records';
 import { useRecords, uploadRecordImage } from '../hooks/useRecords';
 import { useCategoryIntros } from '../hooks/useCategoryIntros';
 
@@ -132,6 +132,70 @@ function getSubtitle(r: AnyRecord): string {
 const GRID_CATEGORIES = ['albums', 'movies', 'books'] as const;
 function useGridView(categoryKey: string): boolean {
   return GRID_CATEGORIES.includes(categoryKey as typeof GRID_CATEGORIES[number]);
+}
+
+// 需要按年份分组的分类
+const YEAR_GROUP_CATEGORIES = ['books', 'movies', 'travel'] as const;
+// 需要按标签分组的分类
+const TAG_GROUP_CATEGORIES = ['notes'] as const;
+
+// 获取记录的年份
+function getRecordYear(r: AnyRecord): string {
+  let dateStr = '';
+  switch (r.category) {
+    case 'books': dateStr = r.readDate; break;
+    case 'movies': dateStr = r.watchDate; break;
+    case 'travel': dateStr = r.date; break;
+    default: return '其他';
+  }
+  if (!dateStr) return '未分类';
+  try {
+    const year = new Date(dateStr).getFullYear();
+    return isNaN(year) ? '未分类' : String(year);
+  } catch {
+    return '未分类';
+  }
+}
+
+// 获取记录的第一个标签（用于分组）
+function getFirstTag(r: AnyRecord): string {
+  if (r.category !== 'notes') return '其他';
+  const tags = (r as NoteRecord).tags;
+  if (!tags || !Array.isArray(tags) || tags.length === 0) return '未分类';
+  return tags[0];
+}
+
+// 按年份分组
+function groupByYear(records: AnyRecord[]): { group: string; items: AnyRecord[] }[] {
+  const groups: Record<string, AnyRecord[]> = {};
+  for (const r of records) {
+    const year = getRecordYear(r);
+    if (!groups[year]) groups[year] = [];
+    groups[year].push(r);
+  }
+  return Object.entries(groups)
+    .map(([group, items]) => ({ group, items }))
+    .sort((a, b) => b.group.localeCompare(a.group)); // 年份降序
+}
+
+// 按标签分组
+function groupByTag(records: AnyRecord[]): { group: string; items: AnyRecord[] }[] {
+  const groups: Record<string, AnyRecord[]> = {};
+  for (const r of records) {
+    const tag = getFirstTag(r);
+    if (!groups[tag]) groups[tag] = [];
+    groups[tag].push(r);
+  }
+  return Object.entries(groups)
+    .map(([group, items]) => ({ group, items }))
+    .sort((a, b) => a.group.localeCompare(b.group)); // 标签字母序
+}
+
+// 判断是否需要分组
+function needsGrouping(categoryKey: string): 'year' | 'tag' | null {
+  if (YEAR_GROUP_CATEGORIES.includes(categoryKey as typeof YEAR_GROUP_CATEGORIES[number])) return 'year';
+  if (TAG_GROUP_CATEGORIES.includes(categoryKey as typeof TAG_GROUP_CATEGORIES[number])) return 'tag';
+  return null;
 }
 
 
@@ -333,6 +397,19 @@ const ThemedCard = ({ category, isOpen, onClose, canEdit = true }: ThemedCardPro
   const [isEditingIntro, setIsEditingIntro] = useState(false);
   const introTextareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // 分组展开/折叠状态
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const groupingType = needsGrouping(category.key);
+
+  const toggleGroup = useCallback((group: string) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(group)) next.delete(group);
+      else next.add(group);
+      return next;
+    });
+  }, []);
+
   // 当卡片打开或分类变化时，加载介绍文字
   useEffect(() => {
     if (isOpen) {
@@ -493,6 +570,189 @@ const ThemedCard = ({ category, isOpen, onClose, canEdit = true }: ThemedCardPro
   }, [category, formData, view, editingRecord, updateRecord, addRecord, resetView, isMultiImageCategory]);
 
   const handleDelete = (id: string) => { deleteRecord(id); if (view==='detail' && editingRecord?.id===id) resetView(); };
+
+  // 渲染网格卡片
+  const renderGridCard = useCallback((r: AnyRecord, index: number) => (
+    <motion.div key={r.id} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
+      transition={{ delay: index * 0.03, duration: 0.2 }}
+      className="group relative cursor-pointer transition-all hover:scale-[1.03] active:scale-[0.97]"
+      style={{
+        backgroundColor: MILKI_CREAM,
+        borderRadius: '10px 10px 4px 4px',
+        border: `2px solid ${MILKI_STROKE}`,
+        boxShadow: '0 3px 0 #c8b494, 0 5px 12px rgba(74,62,53,0.12), inset 0 -4px 0 rgba(74,62,53,0.08)',
+        overflow: 'hidden',
+      }}
+      onClick={() => { setEditingRecord(r); setView('detail'); }}>
+      <div className="relative w-full aspect-[3/4] overflow-hidden"
+        style={{
+          backgroundColor: t.accentBg,
+          borderBottom: `2px solid ${MILKI_STROKE}`,
+        }}>
+        {getDisplayImage(r) ? (
+          <img src={getDisplayImage(r)} alt={getTitle(r)}
+            className="w-full h-full object-cover"
+            loading="lazy" draggable={false} />
+        ) : (
+          <div className="w-full h-full flex flex-col items-center justify-center gap-2 p-3"
+            style={{ backgroundColor: t.accentBg }}>
+            <span className="text-4xl opacity-60">{category.icon}</span>
+            <p className="text-[11px] font-semibold text-center line-clamp-2"
+               style={{ color: t.titleText, fontFamily: FONT_DISPLAY, opacity: 0.8 }}>
+              {getTitle(r)}
+            </p>
+          </div>
+        )}
+        <div className="absolute top-0 left-0 w-1.5 h-full"
+          style={{ background: 'linear-gradient(90deg, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0) 100%)' }} />
+        <div className="absolute bottom-1.5 right-1.5 px-1.5 h-4 rounded-md flex items-center justify-center text-[9px] font-bold"
+          style={{
+            backgroundColor: MILKI_CREAM,
+            color: t.titleText,
+            border: `1.5px solid ${MILKI_STROKE}`,
+            fontFamily: FONT_DISPLAY,
+            boxShadow: '0 1px 0 rgba(74,62,53,0.15)',
+            lineHeight: 1,
+          }}>
+          {index + 1}
+        </div>
+        {canEdit && (
+          <button type="button" onClick={(e) => { e.stopPropagation(); handleDelete(r.id); }}
+            className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:scale-110 z-10"
+            title="删除"
+            style={{
+              backgroundColor: MILKI_RED,
+              color: 'white',
+              border: `1.5px solid ${MILKI_STROKE}`,
+              boxShadow: '0 1px 0 #9a3a2a',
+              fontSize: '11px',
+              fontWeight: 700,
+              lineHeight: 1,
+            }}>
+            ×
+          </button>
+        )}
+      </div>
+      <div className="px-2 py-2">
+        <p className="text-xs font-semibold truncate"
+          style={{ color: t.text, fontFamily: FONT_BODY, letterSpacing: '0.1px' }}>
+          {getTitle(r)}
+        </p>
+        {getSubtitle(r) && (
+          <p className="text-[10px] truncate mt-0.5"
+            style={{ color: t.subText, opacity: 0.75 }}>
+            {getSubtitle(r)}
+          </p>
+        )}
+      </div>
+    </motion.div>
+  ), [t, canEdit, category.icon, handleDelete]);
+
+  // 渲染列表项
+  const renderListItem = useCallback((r: AnyRecord, index: number) => (
+    <motion.div key={r.id} initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }}
+      transition={{ delay: index * 0.02, duration: 0.18 }}
+      className="group relative flex items-center gap-3 p-3 cursor-pointer transition-all hover:translate-x-[1px]"
+      style={{
+        backgroundColor: MILKI_CREAM,
+        borderRadius: '12px',
+        border: `2px solid ${MILKI_STROKE}`,
+        boxShadow: '0 2.5px 0 #c8b494, 0 4px 10px rgba(74,62,53,0.08)',
+      }}
+      onClick={() => { setEditingRecord(r); setView('detail'); }}>
+      <div className="w-5 h-5 shrink-0 rounded-full flex items-center justify-center text-[10px] font-bold"
+        style={{
+          backgroundColor: t.headBg,
+          color: t.titleText,
+          border: `1.5px solid ${MILKI_STROKE}`,
+          fontFamily: FONT_DISPLAY,
+        }}>
+        {index + 1}
+      </div>
+      {getDisplayImage(r) && (
+        <img src={getDisplayImage(r)} alt="" className="w-11 h-11 object-cover shrink-0"
+          style={{ borderRadius: '9px', border: `2px solid ${MILKI_STROKE}` }} />
+      )}
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold truncate" style={{ color: t.text, letterSpacing: '0.2px', fontFamily: FONT_BODY }}>
+          {getTitle(r)}
+        </p>
+        <p className="text-[11px] truncate mt-0.5" style={{ color: t.subText, opacity: 0.75 }}>
+          {getSubtitle(r)}
+        </p>
+      </div>
+      {canEdit && (
+        <button type="button" onClick={(e) => { e.stopPropagation(); handleDelete(r.id); }}
+          className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md transition-all"
+          title="删除"
+          style={{
+            backgroundColor: '#ffe6bf',
+            border: `1.5px solid ${MILKI_STROKE}`,
+            boxShadow: '0 1.5px 0 #c8a070',
+          }}>
+          <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+            <path d="M3 4h8M5.5 4V3a1 1 0 011-1h1a1 1 0 011 1v1M6 6.5v3M8 6.5v3M4.5 4l.5 7.5a1 1 0 001 1h2a1 1 0 001-1L9.5 4"
+              stroke={MILKI_RED} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      )}
+    </motion.div>
+  ), [t, canEdit, handleDelete]);
+
+  // 渲染分组
+  const renderGroups = useCallback((items: AnyRecord[]) => {
+    if (!groupingType) {
+      // 不分组，直接平铺
+      if (isGridView) {
+        return <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">{items.map((r, i) => renderGridCard(r, i))}</div>;
+      }
+      return <div className="space-y-3">{items.map((r, i) => renderListItem(r, i))}</div>;
+    }
+
+    const groups = groupingType === 'year' ? groupByYear(items) : groupByTag(items);
+
+    return (
+      <div className="space-y-5">
+        {groups.map(({ group, items: groupItems }) => {
+          const isCollapsed = collapsedGroups.has(group);
+          return (
+            <div key={group}>
+              <button
+                onClick={() => toggleGroup(group)}
+                className="w-full flex items-center justify-between px-3 py-2 mb-2 transition-all hover:scale-[1.01] active:scale-[0.99]"
+                style={{
+                  backgroundColor: t.accentBg,
+                  border: `1.5px solid ${MILKI_STROKE}`,
+                  borderRadius: '10px',
+                  fontFamily: FONT_DISPLAY,
+                  cursor: 'pointer',
+                }}
+              >
+                <span className="text-sm font-bold" style={{ color: t.titleText, letterSpacing: '0.5px' }}>
+                  {groupingType === 'year' ? `${group}年` : `#${group}`}
+                </span>
+                <span className="flex items-center gap-2">
+                  <span className="text-xs" style={{ color: t.subText }}>{groupItems.length} 条</span>
+                  <span className="text-xs" style={{ color: t.subText }}>{isCollapsed ? '▼' : '▲'}</span>
+                </span>
+              </button>
+              {!isCollapsed && (
+                isGridView ? (
+                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
+                    {groupItems.map((r, i) => renderGridCard(r, i))}
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {groupItems.map((r, i) => renderListItem(r, i))}
+                  </div>
+                )
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }, [groupingType, isGridView, collapsedGroups, toggleGroup, t, renderGridCard, renderListItem]);
 
   return (
     <AnimatePresence>
@@ -794,150 +1054,9 @@ const ThemedCard = ({ category, isOpen, onClose, canEdit = true }: ThemedCardPro
                               </div>
                             )}
                           </div>
-                        ) : isGridView ? (
-                        /* ===== ★ 网格布局：专辑/电影/书架 使用九宫格书架形式 ===== */
-                        <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
-                          {records.map((r, i) => (
-                            <motion.div key={r.id} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
-                              transition={{ delay: i*0.03, duration: 0.2 }}
-                              className="group relative cursor-pointer transition-all hover:scale-[1.03] active:scale-[0.97]"
-                              style={{
-                                backgroundColor: MILKI_CREAM,
-                                borderRadius: '10px 10px 4px 4px',
-                                border: `2px solid ${MILKI_STROKE}`,
-                                boxShadow: '0 3px 0 #c8b494, 0 5px 12px rgba(74,62,53,0.12), inset 0 -4px 0 rgba(74,62,53,0.08)',
-                                overflow: 'hidden',
-                              }}
-                              onClick={() => { setEditingRecord(r); setView('detail'); }}>
-                              {/* 图片缩略图区域（书架封面） */}
-                              <div className="relative w-full aspect-[3/4] overflow-hidden"
-                                style={{
-                                  backgroundColor: t.accentBg,
-                                  borderBottom: `2px solid ${MILKI_STROKE}`,
-                                }}>
-                                {getDisplayImage(r) ? (
-                                  <img src={getDisplayImage(r)} alt={getTitle(r)}
-                                    className="w-full h-full object-cover"
-                                    loading="lazy" draggable={false} />
-                                ) : (
-                                  <div className="w-full h-full flex flex-col items-center justify-center gap-2 p-3"
-                                    style={{ backgroundColor: t.accentBg }}>
-                                    <span className="text-4xl opacity-60">{category.icon}</span>
-                                    <p className="text-[11px] font-semibold text-center line-clamp-2"
-                                       style={{ color: t.titleText, fontFamily: FONT_DISPLAY, opacity: 0.8 }}>
-                                      {getTitle(r)}
-                                    </p>
-                                  </div>
-                                )}
-                                {/* 书脊高光效果 */}
-                                <div className="absolute top-0 left-0 w-1.5 h-full"
-                                  style={{
-                                    background: 'linear-gradient(90deg, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0) 100%)',
-                                  }} />
-                                {/* 序号标签（书架位置） */}
-                                <div className="absolute bottom-1.5 right-1.5 px-1.5 h-4 rounded-md flex items-center justify-center text-[9px] font-bold"
-                                  style={{
-                                    backgroundColor: MILKI_CREAM,
-                                    color: t.titleText,
-                                    border: `1.5px solid ${MILKI_STROKE}`,
-                                    fontFamily: FONT_DISPLAY,
-                                    boxShadow: '0 1px 0 rgba(74,62,53,0.15)',
-                                    lineHeight: 1,
-                                  }}>
-                                  {i+1}
-                                </div>
-                                {/* 删除按钮 —— 仅管理员可见（访客隐藏） */}
-                                {canEdit && (
-                                  <button type="button" onClick={(e) => { e.stopPropagation(); handleDelete(r.id); }}
-                                    className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:scale-110 z-10"
-                                    title="删除"
-                                    style={{
-                                      backgroundColor: MILKI_RED,
-                                      color: 'white',
-                                      border: `1.5px solid ${MILKI_STROKE}`,
-                                      boxShadow: '0 1px 0 #9a3a2a',
-                                      fontSize: '11px',
-                                      fontWeight: 700,
-                                      lineHeight: 1,
-                                    }}>
-                                    ×
-                                  </button>
-                                )}
-                              </div>
-                              {/* 文字信息区域（书架标签） */}
-                              <div className="px-2 py-2">
-                                <p className="text-xs font-semibold truncate"
-                                  style={{ color: t.text, fontFamily: FONT_BODY, letterSpacing: '0.1px' }}>
-                                  {getTitle(r)}
-                                </p>
-                                {getSubtitle(r) && (
-                                  <p className="text-[10px] truncate mt-0.5"
-                                    style={{ color: t.subText, opacity: 0.75 }}>
-                                    {getSubtitle(r)}
-                                  </p>
-                                )}
-                              </div>
-                            </motion.div>
-                          ))}
-                        </div>
-                      ) : (
-                        /* ===== 列表布局：笔记/旅行/演唱会 ===== */
-                        <div className="space-y-3">
-                          {records.map((r, i) => (
-                            <motion.div key={r.id} initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }}
-                              transition={{ delay: i*0.02, duration: 0.18 }}
-                              className="group relative flex items-center gap-3 p-3 cursor-pointer transition-all hover:translate-x-[1px]"
-                              style={{
-                                backgroundColor: MILKI_CREAM,
-                                borderRadius: '12px',
-                                border: `2px solid ${MILKI_STROKE}`,
-                                boxShadow: '0 2.5px 0 #c8b494, 0 4px 10px rgba(74,62,53,0.08)',
-                              }}
-                              onClick={() => { setEditingRecord(r); setView('detail'); }}>
-                              {/* 条目左侧小序号 - 简化 */}
-                              <div className="w-5 h-5 shrink-0 rounded-full flex items-center justify-center text-[10px] font-bold"
-                                style={{
-                                  backgroundColor: t.headBg,
-                                  color: t.titleText,
-                                  border: `1.5px solid ${MILKI_STROKE}`,
-                                  fontFamily: FONT_DISPLAY,
-                                }}>
-                                {i+1}
-                              </div>
-
-                              {getDisplayImage(r) && (
-                                <img src={getDisplayImage(r)} alt="" className="w-11 h-11 object-cover shrink-0"
-                                  style={{ borderRadius: '9px', border: `2px solid ${MILKI_STROKE}` }} />
-                              )}
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-semibold truncate" style={{ color: t.text, letterSpacing: '0.2px', fontFamily: FONT_BODY }}>
-                                  {getTitle(r)}
-                                </p>
-                                <p className="text-[11px] truncate mt-0.5" style={{ color: t.subText, opacity: 0.75 }}>
-                                  {getSubtitle(r)}
-                                </p>
-                              </div>
-
-                              {/* 右侧删除按钮 - 简化（仅管理员可见） */}
-                              {canEdit && (
-                                <button type="button" onClick={(e) => { e.stopPropagation(); handleDelete(r.id); }}
-                                  className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md transition-all"
-                                  title="删除"
-                                  style={{
-                                    backgroundColor: '#ffe6bf',
-                                    border: `1.5px solid ${MILKI_STROKE}`,
-                                    boxShadow: '0 1.5px 0 #c8a070',
-                                  }}>
-                                  <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
-                                    <path d="M3 4h8M5.5 4V3a1 1 0 011-1h1a1 1 0 011 1v1M6 6.5v3M8 6.5v3M4.5 4l.5 7.5a1 1 0 001 1h2a1 1 0 001-1L9.5 4"
-                                      stroke={MILKI_RED} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-                                  </svg>
-                                </button>
-                              )}
-                            </motion.div>
-                          ))}
-                        </div>
-                      )}
+                        ) : (
+                          renderGroups(records)
+                        )}
                     </>)}
                     </motion.div>
                   )}
