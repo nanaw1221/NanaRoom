@@ -7,6 +7,7 @@ import { useWindowState } from './hooks/useWindowState';
 import { categoryDefs } from './types/records';
 import type { RecordCategory } from './types/records';
 import { AuthProvider, useAuth } from './hooks/useAuth';
+import { useCategoryIntros } from './hooks/useCategoryIntros';
 
 function App() {
   // 调试模式：访问 http://localhost:5173/?calib=1 即可启用交互式校准
@@ -50,6 +51,7 @@ function MainApp() {
   } = useWindowState();
 
   const { isAdmin } = useAuth();
+  const { getIntro, saveIntro } = useCategoryIntros();
 
   const [activeCategory, setActiveCategory] = useState<RecordCategory | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -131,6 +133,8 @@ function MainApp() {
           isOpen={activeCategory === cat.key}
           onClose={handlePanelClose}
           canEdit={isAdmin}
+          getIntro={getIntro}
+          saveIntro={saveIntro}
         />
       ))}
     </div>

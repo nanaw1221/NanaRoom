@@ -2,7 +2,6 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { AnyRecord, CategoryDef, RecordCategory, NoteRecord } from '../types/records';
 import { useRecords, uploadRecordImage } from '../hooks/useRecords';
-import { useCategoryIntros } from '../hooks/useCategoryIntros';
 
 interface ThemedCardProps {
   category: CategoryDef;
@@ -10,6 +9,8 @@ interface ThemedCardProps {
   onClose: () => void;
   /** 当前是否可以编辑（管理员=true / 访客=false / 本地模式=默认true） */
   canEdit?: boolean;
+  getIntro: (category: RecordCategory) => string;
+  saveIntro: (category: RecordCategory, text: string) => Promise<void>;
 }
 
 type View = 'list' | 'add' | 'edit' | 'detail';
@@ -378,9 +379,8 @@ const ImageUpload = ({ value, onChange, onFileChange, maxImages = 1 }: {
 };
 
 /* ===== 主组件：Milki Receipt 风格卡片 ===== */
-const ThemedCard = ({ category, isOpen, onClose, canEdit = true }: ThemedCardProps) => {
+const ThemedCard = ({ category, isOpen, onClose, canEdit = true, getIntro, saveIntro }: ThemedCardProps) => {
   const { records, syncing, cloudError, addRecord, updateRecord, deleteRecord, loadRecordDetails } = useRecords<AnyRecord>(category.key);
-  const { getIntro, saveIntro } = useCategoryIntros();
   const [view, setView] = useState<View>('list');
   const [editingRecord, setEditingRecord] = useState<AnyRecord | null>(null);
   const [formData, setFormData] = useState<Record<string, string | string[]>>({});

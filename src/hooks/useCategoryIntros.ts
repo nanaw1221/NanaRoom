@@ -42,6 +42,11 @@ function saveLocal(intros: IntroMap): void {
   }
 }
 
+// 判断错误是否为"表不存在"（schema cache 问题）
+function isTableMissingError(message: string): boolean {
+  return message?.includes('Could not find the table') || message?.includes('schema cache');
+}
+
 export function useCategoryIntros() {
   const { isConfigured, isAdmin, isLoading } = useAuth();
 
@@ -50,53 +55,82 @@ export function useCategoryIntros() {
 
   const fetchReqIdRef = useRef(0);
   const hasFetchedCloudRef = useRef(false);
+  const fetchFailCountRef = useRef(0);
 
+  const fetchCloud = useCallback(async () => {
+    if (!isConfigured || !supabase) return;
+    if (isLoading) return;
+    if (hasFetchedCloudRef.current) return;
+
+    const reqId = ++fetchReqIdRef.current;
+
+    try {
+      const { data, error } = await supabase!
+        .from('category_intros')
+        .select('category, text');
+
+      if (fetchReqIdRef.current !== reqId) return;
+
+      if (error) {
+        console.warn('[useCategoryIntros] 云端拉取失败:', error.message);
+        // 如果是表不存在的错误，允许重试（最多重试 5 次）
+        if (isTableMissingError(error.message) && fetchFailCountRef.current < 5) {
+          fetchFailCountRef.current++;
+          console.warn(`[useCategoryIntros] 表可能不存在，将在稍后重试 (${fetchFailCountRef.current}/5)`);
+          return; // 不设置 hasFetchedCloudRef，允许重试
+        }
+        hasFetchedCloudRef.current = true;
+        setCloudSynced(true);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        setIntros((prev) => {
+          const next = { ...prev };
+          for (const row of data) {
+            const cat = row.category as RecordCategory;
+            if (cat && row.text) {
+              next[cat] = row.text;
+            }
+          }
+          saveLocal(next);
+          return next;
+        });
+      }
+      console.log('[useCategoryIntros] 云端介绍拉取成功');
+      hasFetchedCloudRef.current = true;
+      setCloudSynced(true);
+    } catch (e: any) {
+      if (fetchReqIdRef.current !== reqId) return;
+      console.warn('[useCategoryIntros] 云端拉取异常:', e?.message);
+      hasFetchedCloudRef.current = true;
+      setCloudSynced(true);
+    }
+  }, [isConfigured, isLoading]);
+
+  // 初始拉取
+  useEffect(() => {
+    if (!isConfigured || !supabase) return;
+    if (isLoading) return;
+    fetchCloud();
+  }, [isConfigured, isLoading, fetchCloud]);
+
+  // 表不存在时，延迟重试
   useEffect(() => {
     if (!isConfigured || !supabase) return;
     if (isLoading) return;
     if (hasFetchedCloudRef.current) return;
-    hasFetchedCloudRef.current = true;
 
-    const reqId = ++fetchReqIdRef.current;
-
-    const fetchCloud = async () => {
-      try {
-        const { data, error } = await supabase!
-          .from('category_intros')
-          .select('category, text');
-
-        if (fetchReqIdRef.current !== reqId) return;
-
-        if (error) {
-          console.warn('[useCategoryIntros] 云端拉取失败:', error.message);
-          return;
-        }
-
-        if (data && data.length > 0) {
-          setIntros((prev) => {
-            const next = { ...prev };
-            for (const row of data) {
-              const cat = row.category as RecordCategory;
-              if (cat && row.text) {
-                next[cat] = row.text;
-              }
-            }
-            saveLocal(next);
-            return next;
-          });
-        }
-        console.log('[useCategoryIntros] 云端介绍拉取成功');
-      } catch (e: any) {
-        console.warn('[useCategoryIntros] 云端拉取异常:', e?.message);
-      } finally {
-        if (fetchReqIdRef.current === reqId) {
-          setCloudSynced(true);
-        }
+    const timer = setInterval(() => {
+      if (hasFetchedCloudRef.current) {
+        clearInterval(timer);
+        return;
       }
-    };
+      fetchCloud();
+    }, 3000); // 每 3 秒重试一次
 
-    fetchCloud();
-  }, [isConfigured, isLoading]);
+    return () => clearInterval(timer);
+  }, [isConfigured, isLoading, fetchCloud]);
 
   const getIntro = useCallback(
     (category: RecordCategory): string => {
@@ -136,6 +170,10 @@ export function useCategoryIntros() {
           console.log(`[useCategoryIntros] 云端保存成功: ${category}`);
         } catch (e: any) {
           console.warn(`[useCategoryIntros] 云端保存失败 (${category}):`, e?.message);
+          // 如果表不存在，标记需要重新拉取
+          if (isTableMissingError(e?.message)) {
+            hasFetchedCloudRef.current = false;
+          }
         }
       }
     },
